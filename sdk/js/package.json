@@ -1,0 +1,20 @@
+{
+  "name": "@shadybin/verify",
+  "version": "0.1.0",
+  "description": "Verify shadybin statements: that a release was rebuilt from its tagged source and passed review",
+  "license": "MIT",
+  "type": "module",
+  "repository": { "type": "git", "url": "git+https://github.com/shadybin/shadybin.git", "directory": "sdk/js" },
+  "homepage": "https://shadybin.dev",
+  "keywords": ["supply-chain", "reproducible-builds", "verification", "updater"],
+  "engines": { "node": ">=20" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

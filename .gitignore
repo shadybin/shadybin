@@ -3,3 +3,6 @@ sdk/rust/target/
 sdk/rust/Cargo.lock
 sdk/zig/.zig-cache/
 sdk/zig/zig-out/
+sdk/js/node_modules/
+sdk/js/dist/
+__pycache__/

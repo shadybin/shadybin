@@ -79,8 +79,10 @@ To check a file `name`, with SHA-256 `digest`, from release `tag` of `repo`:
 5. Check the statement lists `name` with `digest` (`not_listed`).
 
 There is an SDK for each of Go (`verify/`, module `github.com/shadybin/shadybin/verify`),
-Zig (`sdk/zig`) and Rust (`sdk/rust`, crate `shadybin-verify`). Each does steps 2 to 5
-with its standard library and, for Rust, `ed25519-dalek` and `base64`. Each must give
+Zig (`sdk/zig`), Rust (`sdk/rust`, crate `shadybin-verify`), Python (`sdk/python`, package
+`shadybin-verify`) and JavaScript/TypeScript (`sdk/js`, `@shadybin/verify`). Each does
+steps 2 to 5: Go, Zig and Python with their standard libraries alone, TypeScript with
+WebCrypto, and Rust with `ed25519-dalek` and `base64`. Each must give
 the result named in `spec/vectors.json` for every case there, the first check that
 fails, or `ok`.
 

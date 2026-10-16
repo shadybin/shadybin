@@ -12,8 +12,10 @@ make build   # → bin/shadybin
 
 ## Rules
 
-- The SDKs (`verify/` for Go, `sdk/zig`, `sdk/rust`) are what vendors put in their
-  updaters. Go and Zig use their standard libraries only; Rust uses `ed25519-dalek` and
+- The SDKs (`verify/` for Go, `sdk/zig`, `sdk/rust`, `sdk/python`, `sdk/js`) are what
+  vendors put in their updaters. Go, Zig and Python use their standard libraries only
+  (Python's Ed25519 is RFC 8032's reference algorithm, tested against its vectors);
+  TypeScript uses WebCrypto and has no dependencies; Rust uses `ed25519-dalek` and
   `base64`. Keep them small: everything they add is attack surface in every binary that
   uses them. `verify/` is its own Go module, so vendors never get this module's
   dependencies.

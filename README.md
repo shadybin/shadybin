@@ -32,6 +32,8 @@ certified releases, so a certified binary updates only to other certified binari
 - **Go:** `github.com/shadybin/shadybin/verify`, standard library only.
 - **Zig:** `sdk/zig`, standard library only, no allocation.
 - **Rust:** `sdk/rust`, the `shadybin-verify` crate.
+- **Python:** `sdk/python`, the `shadybin-verify` package, standard library only.
+- **JavaScript and TypeScript:** `sdk/js`, `@shadybin/verify`, no dependencies (WebCrypto).
 
 ```go
 c := verify.Checker{} // trusts verify.DefaultKeys, shadybin's pinned keys
@@ -52,7 +54,7 @@ See [spec/SPEC.md](spec/SPEC.md) for the formats and the flow.
 
 ```text
 verify/                 the Go SDK (its own module, standard library only)
-sdk/zig/, sdk/rust/     the Zig and Rust SDKs
+sdk/                    the Zig, Rust, Python and JavaScript/TypeScript SDKs
 spec/                   SPEC.md, and vectors.json, the conformance tests every SDK runs
 cmd/shadybin/           the CLI: keygen, rebuild, compare, manifest, capabilities, review,
                         statement, sign, verify
@@ -70,7 +72,7 @@ The registry is its own repository,
 ## Development
 
 ```sh
-make check     # Go, Zig and Rust: format, vet, lint, every test, the vectors in sync
+make check     # every language: format, vet, lint, every test, the vectors in sync
 make vectors   # regenerate spec/vectors.json and copy it into each SDK
 make build     # → bin/shadybin
 ```
