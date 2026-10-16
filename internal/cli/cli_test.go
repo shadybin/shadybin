@@ -124,7 +124,7 @@ func TestCertifyAndVerify(t *testing.T) {
 	keyFile := filepath.Join(tmp, "key")
 	pub := strings.TrimSpace(mustRun(t, "keygen", "-o", keyFile))
 	mustRun(t, "sign", "-registry", reg, "-repo", "github.com/acme/tool", "-tag", "v1.0.0", "-key", keyFile)
-	badge, err := os.ReadFile(filepath.Join(projDir, "badge.json"))
+	badge, err := os.ReadFile(filepath.Join(projDir, "v1.0.0", "badge.json"))
 	if err != nil || !strings.Contains(string(badge), `"v1.0.0 not shady"`) {
 		t.Fatalf("badge: %s %v", badge, err)
 	}
@@ -228,7 +228,7 @@ func TestRejected(t *testing.T) {
 	statement("v2.0.0", "fail", review.Rejected)
 	mustRun(t, "sign", "-registry", reg, "-repo", "github.com/acme/tool", "-tag", "v2.0.0", "-key", key)
 	projDir := filepath.Join(reg, "github.com", "acme", "tool")
-	if badge, _ := os.ReadFile(filepath.Join(projDir, "badge.json")); !strings.Contains(string(badge), `"v2.0.0 shady"`) || !strings.Contains(string(badge), "red") {
+	if badge, _ := os.ReadFile(filepath.Join(projDir, "v2.0.0", "badge.json")); !strings.Contains(string(badge), `"v2.0.0 shady"`) || !strings.Contains(string(badge), "red") {
 		t.Fatalf("badge: %s", badge)
 	}
 	if _, err := os.Stat(filepath.Join(projDir, "latest")); err == nil {

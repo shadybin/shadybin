@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/shadybin/shadybin/internal/checksums"
 	"github.com/shadybin/shadybin/internal/keys"
@@ -480,6 +481,26 @@ func certifiedIn(root, repo, tag string) error {
 	if s.Verdict != verify.Certified {
 		return errors.New("it was not certified")
 	}
+	return nil
+}
+
+func runBadge(_ context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flags("badge", "", stderr)
+	root := fs.String("registry", "", "the registry directory")
+	repo := fs.String("repo", "", "the source repository, host/owner/name")
+	tag := fs.String("tag", "", "the project's latest release")
+	published := fs.String("published", "", "when it was published, RFC 3339")
+	if err := parse(fs, args, "registry", "repo", "tag", "published"); err != nil {
+		return err
+	}
+	at, err := time.Parse(time.RFC3339, *published)
+	if err != nil {
+		return fmt.Errorf("-published: %w", err)
+	}
+	if err := registry.WriteBadges(*root, repoFlag(*repo), *tag, at, time.Now()); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "%s %s: %s\n", repoFlag(*repo), *tag, registry.State(*root, repoFlag(*repo), *tag, at, time.Now()))
 	return nil
 }
 

@@ -2,7 +2,7 @@
 // how to rebuild it and one directory per certified release.
 //
 //	<repo>/project.json            how to rebuild the project
-//	<repo>/badge.json              shields.io endpoint badge: the newest release, its verdict
+//	<repo>/badge.json              shields.io endpoint badge: the latest release, its standing
 //	<repo>/<tag>/badge.json        the release's own badge
 //	<repo>/latest                  the newest certified release's tag: the next review's base
 //	<repo>/<tag>/statement.txt     what was certified (package verify)
@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/shadybin/shadybin/verify"
 )
@@ -163,12 +164,44 @@ type Badge struct {
 	Color         string `json:"color"`
 }
 
-// Published records a newly signed release. Two badges show its verdict with its version:
-// the project's, which follows the newest release, and the release's own, which never
-// changes, for release notes. latest, the base the next release is reviewed against,
-// moves only to a certified release: rejected code never becomes the base, or what it hid
-// would never be shown to a reviewer again.
+// Published records a newly signed release: its own badge shows its verdict, and
+// latest, the base the next release is reviewed against, moves only to a certified one.
+// Rejected code never becomes the base, or what it hid would never be shown to a reviewer
+// again. The project's badge follows the project's latest release, signed or not: see
+// WriteBadges.
 func Published(root, repo, tag, verdict string) error {
+	release, err := ReleaseDir(root, repo, tag)
+	if err != nil {
+		return err
+	}
+	if err := writeBadge(filepath.Join(release, BadgeName), badgeFor(tag, verdict)); err != nil {
+		return err
+	}
+	if verdict != verify.Certified {
+		return nil
+	}
+	dir, _ := ProjectDir(root, repo)
+	return os.WriteFile(filepath.Join(dir, "latest"), []byte(tag+"\n"), 0o644)
+}
+
+// PendingFor is how long a release may go unsigned before its badge says so: time for
+// the vendor's certify run and the next intake.
+const PendingFor = 24 * time.Hour
+
+// Badge states, beyond the verdicts.
+const (
+	// Pending is a release published under PendingFor ago with no statement yet.
+	Pending = "pending"
+	// NotCertified is a release with no statement after PendingFor: never certified, or
+	// its certification failed.
+	NotCertified = "not certified"
+)
+
+// WriteBadges points the project's badge at its latest release, the one users are
+// getting, whatever shadybin has made of it: its verdict once signed, pending at first,
+// then not certified. A vendor cannot keep an old release's badge by not certifying a
+// new one. It also writes the release's own badge, if it has none yet.
+func WriteBadges(root, repo, tag string, published, now time.Time) error {
 	dir, err := ProjectDir(root, repo)
 	if err != nil {
 		return err
@@ -177,24 +210,59 @@ func Published(root, repo, tag, verdict string) error {
 	if err != nil {
 		return err
 	}
-	badge := Badge{SchemaVersion: 1, Label: "shadybin", Message: tag + " not shady", Color: "brightgreen"}
-	if verdict != verify.Certified {
-		badge.Message, badge.Color = tag+" shady", "red"
+	state := State(root, repo, tag, published, now)
+	b := badgeFor(tag, state)
+	if err := writeBadge(filepath.Join(dir, BadgeName), b); err != nil {
+		return err
 	}
-	b, err := json.MarshalIndent(badge, "", "  ")
+	if state == Pending || state == NotCertified {
+		if err := os.MkdirAll(release, 0o755); err != nil {
+			return err
+		}
+		return writeBadge(filepath.Join(release, BadgeName), b)
+	}
+	return nil
+}
+
+// State is a release's standing: its verdict when the registry holds its signed
+// statement, otherwise Pending or NotCertified, by how long ago it was published.
+func State(root, repo, tag string, published, now time.Time) string {
+	if release, err := ReleaseDir(root, repo, tag); err == nil {
+		data, err := os.ReadFile(filepath.Join(release, verify.StatementName))
+		_, sigErr := os.Stat(filepath.Join(release, verify.SignatureName))
+		if err == nil && sigErr == nil {
+			if s, err := verify.ParseStatement(data); err == nil {
+				return s.Verdict
+			}
+		}
+	}
+	if now.Sub(published) < PendingFor {
+		return Pending
+	}
+	return NotCertified
+}
+
+func badgeFor(tag, state string) Badge {
+	b := Badge{SchemaVersion: 1, Label: "shadybin"}
+	switch state {
+	case verify.Certified:
+		b.Message, b.Color = tag+" not shady", "brightgreen"
+	case verify.Rejected:
+		b.Message, b.Color = tag+" shady", "red"
+	case Pending:
+		b.Message, b.Color = tag+" pending", "lightgrey"
+	default:
+		b.Message, b.Color = tag+" not certified", "orange"
+	}
+	return b
+}
+
+func writeBadge(path string, b Badge) error {
+	data, err := json.MarshalIndent(b, "", "  ")
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
-	for _, d := range []string{dir, release} {
-		if err := os.WriteFile(filepath.Join(d, BadgeName), b, 0o644); err != nil {
-			return err
-		}
-	}
-	if verdict != verify.Certified {
-		return nil
-	}
-	return os.WriteFile(filepath.Join(dir, "latest"), []byte(tag+"\n"), 0o644)
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // BadgeName is a badge's file, for shields.io's endpoint badge:

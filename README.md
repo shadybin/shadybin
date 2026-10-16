@@ -21,7 +21,8 @@ review, and the project gets a badge:
 ![shadybin](https://img.shields.io/endpoint?url=https://shadybin.dev/registry/github.com/<owner>/<repo>/badge.json)
 ```
 
-which reads "v0.2.7 not shady", or "v0.2.7 shady". The vendor pays for it all, on its own
+which names the latest release: "v0.2.7 not shady", "v0.2.7 shady", "v0.2.7 pending" for
+its first day, then "v0.2.7 not certified" if nobody certified it. The vendor pays for it all, on its own
 Actions minutes and Claude API key. Reviews of third-party code are cached and shared, so
 a popular module is reviewed once for everyone.
 

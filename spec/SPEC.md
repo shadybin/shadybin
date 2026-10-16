@@ -98,7 +98,20 @@ deps/<module>@<version>/<digest>.json      a cached review of a module
 deps/<module>@<version>/<digest>.json.sig
 ```
 
-A badge reads "v0.2.7 not shady" in green, or "v0.2.7 shady" in red. Embed it with
+The project's badge names its **latest release**, the one GitHub's `releases/latest`
+points to, the one users are getting, whatever shadybin has made of it:
+
+| The latest release is | The badge reads |
+|---|---|
+| certified | `v0.2.8 not shady`, green |
+| rejected | `v0.2.8 shady`, red |
+| unsigned, published under 24 hours ago | `v0.2.8 pending`, grey |
+| unsigned after that | `v0.2.8 not certified`, orange |
+
+A vendor therefore cannot keep an old release's green badge by not certifying a new one,
+and a release whose certification failed says so. Intake updates it on every pass. Each
+release also has its own badge, which never moves on to a later release, for its release
+notes. Embed the project's badge with
 `https://img.shields.io/endpoint?url=https://shadybin.dev/registry/<repo>/badge.json`.
 
 `latest` moves only to a certified release. It is the base the next release is reviewed

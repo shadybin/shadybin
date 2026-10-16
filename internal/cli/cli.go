@@ -24,7 +24,8 @@ var commands = []command{
 	{"capabilities", "write the report's capabilities section from a manifest", runCapabilities},
 	{"review", "have the model review the code compiled in, and decide the verdict", runReview},
 	{"statement", "write the statement for rebuilt files that match", runStatement},
-	{"sign", "sign a release's statement and update the badge", runSign},
+	{"sign", "sign a release's statement", runSign},
+	{"badge", "point a project's badge at its latest release", runBadge},
 	{"verify", "check files against the registry", runVerify},
 }
 
