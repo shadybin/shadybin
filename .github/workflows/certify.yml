@@ -39,8 +39,6 @@ env:
   # The registry repository itself, read raw: certify only reads it, and the repository is
   # the record, so this needs no DNS and no Pages build to have caught up.
   REGISTRY: https://raw.githubusercontent.com/shadybin/registry/main
-  # TODO: pin to a shadybin release, the commit this workflow file is at.
-  SHADYBIN_REF: main
   # shadybin's public keys, hex, comma-separated: cached reviews must be signed by one.
   SHADYBIN_KEYS: d971638b671326b3831fb6962e0da516593a1af317b29521651bdf02bb2ed8fc
 
@@ -52,14 +50,29 @@ jobs:
     outputs:
       builds: ${{ steps.plan.outputs.builds }}
     steps:
-      - uses: actions/checkout@v5
+      # The shadybin that rebuilds, reviews and attests is the one at this workflow
+      # file's own commit: the commit the vendor pinned, and the one the attestation
+      # names. Building it from a branch would let it change under a pinned caller.
+      - name: Resolve this workflow's own commit
+        env:
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          # An empty value would make checkout fall back to the caller's repository.
+          if [ -z "$WORKFLOW_REPOSITORY" ] || [ -z "$WORKFLOW_SHA" ]; then
+            echo "::error::job.workflow_repository/job.workflow_sha unavailable; refusing to build an unpinned shadybin"
+            exit 1
+          fi
+          echo "building shadybin from $WORKFLOW_REPOSITORY@$WORKFLOW_SHA"
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          repository: shadybin/shadybin
-          ref: ${{ env.SHADYBIN_REF }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: shadybin
           persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: shadybin/go.mod
           cache: false
@@ -80,7 +93,7 @@ jobs:
           echo "builds=$(jq -c '[.builds | to_entries[] | {index: .key, runner: .value.runner,
             go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // "")}]' sb/project.json)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: shadybin
           path: sb/
@@ -99,25 +112,25 @@ jobs:
     steps:
       # The tag at the workspace root, where the vendor's release job builds it: compilers
       # can embed the source's path.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: shadybin
           path: ${{ runner.temp }}/sb
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: matrix.build.go != ''
         with:
           go-version-file: ${{ matrix.build.go == 'go.mod' && 'go.mod' || '' }}
           go-version: ${{ matrix.build.go != 'go.mod' && matrix.build.go || '' }}
           cache: false
 
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         if: matrix.build.zig != ''
         with:
           version: ${{ matrix.build.zig }}
@@ -139,7 +152,7 @@ jobs:
           chmod +x "$sb/shadybin-$os-$arch"
           "$sb/shadybin-$os-$arch" rebuild -project "$sb/project.json" -build "$INDEX" -tag "$TAG" -src . -out "$RUNNER_TEMP/rebuilt"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rebuilt-${{ matrix.build.index }}
           path: ${{ runner.temp }}/rebuilt/
@@ -154,18 +167,18 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: shadybin
           path: ${{ runner.temp }}/sb
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: rebuilt-*
           merge-multiple: true
@@ -182,12 +195,12 @@ jobs:
           echo "ZIG=$(jq -r '[.builds[].toolchain.zig // empty][0] // ""' "$sb/project.json")" >> "$GITHUB_ENV"
 
       # The analysis reads the code the way its language's tools do.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: env.LANGUAGE == 'go'
         with:
           go-version-file: go.mod
           cache: false
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         if: env.LANGUAGE == 'zig'
         with:
           version: ${{ env.ZIG }}
