@@ -279,11 +279,15 @@ reviewed once, paid for by the first vendor who compiles it in.
      manifest, reviews the code on the vendor's Claude API key, and writes the statement
      and report.
 
-   It attests all four files with the workflow's Sigstore identity and attaches them to
-   the release as `shadybin-statement.txt`, `shadybin-report.md`, `shadybin-manifest.json`
-   and `shadybin-review.json`.
+   It attests all four files with the workflow's Sigstore identity, keeps them as the
+   run's `shadybin-<tag>` artifact, and attaches them to the release as
+   `shadybin-statement.txt`, `shadybin-report.md`, `shadybin-manifest.json` and
+   `shadybin-review.json`. An immutable release refuses assets once published, so for one
+   the artifact is where they live.
 2. Every 15 minutes the registry's `intake` workflow looks at each registered project's
-   recent releases. For any release not yet in the registry, it checks that all four
+   recent releases. It takes the four files from the release, or, when the release does
+   not carry them, from the project's newest `shadybin-<tag>` artifact that verifies; where
+   they came from earns no trust. For any release not yet in the registry, it checks that all four
    files were attested by that workflow, in the project's repository, on a GitHub-hosted
    runner, from a commit of the workflow listed in the registry's
    `.github/certify-commits`: the commits shadybin has released, less any withdrawn. A

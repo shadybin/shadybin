@@ -278,5 +278,22 @@ jobs:
         with:
           subject-path: ${{ env.WORK }}/out/shadybin-*
 
+      # Intake reads the four files from the release, or from this artifact when the
+      # release cannot take them. Either way it trusts only the attestations, never where
+      # the files came from.
+      - name: Keep the files with this run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: shadybin-${{ env.TAG }}
+          path: ${{ env.WORK }}/out/shadybin-*
+          if-no-files-found: error
+
+      # An immutable release (GitHub's setting) refuses new assets once published, so a
+      # certification of one lives in the artifact above instead.
       - name: Attach to the release
-        run: gh release upload "$TAG" "$WORK"/out/shadybin-* --clobber -R "$GITHUB_REPOSITORY"
+        run: |
+          if [ "$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isImmutable -q .isImmutable)" = true ]; then
+            echo "::notice::$TAG is an immutable release; the certification is kept in the run's shadybin-$TAG artifact for intake"
+            exit 0
+          fi
+          gh release upload "$TAG" "$WORK"/out/shadybin-* --clobber -R "$GITHUB_REPOSITORY"
