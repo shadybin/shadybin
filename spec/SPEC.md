@@ -267,8 +267,8 @@ reviewed once, paid for by the first vendor who compiles it in.
 ## Certifying
 
 1. The vendor's release workflow calls `shadybin/shadybin/.github/workflows/certify.yml`
-   after the release is published, pinned to a commit. It runs on the vendor's
-   GitHub-hosted runners:
+   after the release is published, at `@v1`, which moves to each compatible release, or
+   pinned to an exact one. It runs on the vendor's GitHub-hosted runners:
    - `plan` builds shadybin and reads `project.json` from the registry.
    - `rebuild` runs each build on its own runner, with the tag checked out at the
      workspace root as the vendor's release job has it.
@@ -282,9 +282,12 @@ reviewed once, paid for by the first vendor who compiles it in.
 2. Every 15 minutes the registry's `intake` workflow looks at each registered project's
    recent releases. For any release not yet in the registry, it checks that all four
    files were attested by that workflow, in the project's repository, on a GitHub-hosted
-   runner. What triggered the run does not matter: certify checks out the tag itself, and
-   the statement names it. It reruns the rule, signs the statement, caches the module
-   reviews and commits.
+   runner, from a commit of the workflow listed in the registry's
+   `.github/certify-commits`: the commits shadybin has released, less any withdrawn. A
+   vendor cannot keep an old certify with a known flaw, and needs to change nothing when a
+   new one comes out. What triggered the run does not matter: certify checks out the tag
+   itself, and the statement names it. It reruns the rule, signs the statement, caches the
+   module reviews and commits.
 
 No person approves a signature. What gets signed follows from checks anyone can rerun.
 The signing key is a secret of the registry's `signing` environment, which deploys from

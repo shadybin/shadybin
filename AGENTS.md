@@ -44,3 +44,7 @@ make build   # → bin/shadybin
   `review.PromptVersion` (or `Model`), so cached answers are never reused for a
   different question.
 - Workflows pass inputs through `env`, never interpolated into `run:`.
+- Vendors call `certify.yml@v1`. Its inputs, secrets and the permissions it asks for are
+  the v1 contract; changing them is a v2. To release: tag `vX.Y.Z` on `main`, move `v1`
+  to it, and add its commit to the registry's `.github/certify-commits`, or intake
+  will not accept its attestations.

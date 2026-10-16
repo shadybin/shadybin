@@ -1,13 +1,17 @@
 # The certification a vendor runs on its own Actions minutes and Claude API key. A vendor
-# calls it from its release workflow, after the release is published, pinned to a commit
-# of this repository:
+# calls it from its release workflow, after the release is published:
 #
 #   certify:
 #     needs: release
 #     permissions: { contents: write, id-token: write, attestations: write }
-#     uses: shadybin/shadybin/.github/workflows/certify.yml@<sha>
+#     uses: shadybin/shadybin/.github/workflows/certify.yml@v1
 #     with: { tag: "${{ github.ref_name }}" }
 #     secrets: { ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}" }
+#
+# v1 moves to each compatible release, so a vendor never has to update this; a vendor
+# that would rather review each update pins an exact release (v1.2.3, or its commit) and
+# lets Dependabot bump it. Only a change to the inputs, the secrets or the permissions
+# above is a v2.
 #
 # plan reads how to rebuild the project from the registry's project.json, not the
 # vendor's repository. rebuild runs each of its builds on that build's own runner, since a
@@ -16,8 +20,8 @@
 # third-party code that is new or changed, writes the statement and report, attests them
 # with this workflow's identity and attaches them to the release. The vendor runs it but
 # cannot change what it does: the attestation names this file and commit
-# (job_workflow_ref), and the registry's intake accepts nothing else. The registry signs;
-# this never does.
+# (job_workflow_ref), and the registry's intake accepts only the commits shadybin has
+# released, listed in its .github/certify-commits. The registry signs; this never does.
 name: certify
 
 on:
