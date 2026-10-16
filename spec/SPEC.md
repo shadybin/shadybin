@@ -279,8 +279,10 @@ reviewed once, paid for by the first vendor who compiles it in.
    and `shadybin-review.json`.
 2. Every 15 minutes the registry's `intake` workflow looks at each registered project's
    recent releases. For any release not yet in the registry, it checks that all four
-   files were attested by that workflow, for that tag, on a GitHub-hosted runner. It
-   reruns the rule, signs the statement, caches the module reviews and commits.
+   files were attested by that workflow, in the project's repository, on a GitHub-hosted
+   runner. What triggered the run does not matter: certify checks out the tag itself, and
+   the statement names it. It reruns the rule, signs the statement, caches the module
+   reviews and commits.
 
 No person approves a signature. What gets signed follows from checks anyone can rerun.
 The signing key is a secret of the registry's `signing` environment, which deploys from
