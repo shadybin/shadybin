@@ -517,6 +517,15 @@ func runBadge(_ context.Context, args []string, stdout, stderr io.Writer) error 
 	return nil
 }
 
+func runPages(_ context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flags("pages", "", stderr)
+	root := fs.String("registry", "", "the registry directory")
+	if err := parse(fs, args, "registry"); err != nil {
+		return err
+	}
+	return registry.WritePages(*root)
+}
+
 func runVerify(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flags("verify", "<file>...", stderr)
 	reg := fs.String("registry", verify.DefaultRegistry, "registry URL, or a local registry directory")

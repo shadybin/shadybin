@@ -26,6 +26,7 @@ var commands = []command{
 	{"statement", "write the statement for rebuilt files that match", runStatement},
 	{"sign", "sign a release's statement", runSign},
 	{"badge", "point a project's badge at its latest release", runBadge},
+	{"pages", "write the registry's HTML pages", runPages},
 	{"verify", "check files against the registry", runVerify},
 }
 
