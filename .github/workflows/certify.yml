@@ -1,0 +1,256 @@
+# The certification a vendor runs on its own Actions minutes and Claude API key. A vendor
+# calls it from its release workflow, after the release is published, pinned to a commit
+# of this repository:
+#
+#   certify:
+#     needs: release
+#     permissions: { contents: write, id-token: write, attestations: write }
+#     uses: shadybin/shadybin/.github/workflows/certify.yml@<sha>
+#     with: { tag: "${{ github.ref_name }}" }
+#     secrets: { ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}" }
+#
+# plan reads how to rebuild the project from the registry's project.json, not the
+# vendor's repository. rebuild runs each of its builds on that build's own runner, since a
+# macOS binary may need macOS. certify compares what was rebuilt with what was published,
+# records what the code can do, has Claude review the code the vendor controls and the
+# third-party code that is new or changed, writes the statement and report, attests them
+# with this workflow's identity and attaches them to the release. The vendor runs it but
+# cannot change what it does: the attestation names this file and commit
+# (job_workflow_ref), and the registry's intake accepts nothing else. The registry signs;
+# this never does.
+name: certify
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag to certify.
+        type: string
+        required: true
+    secrets:
+      ANTHROPIC_API_KEY:
+        description: The vendor's Claude API key, which pays for its reviews.
+        required: true
+
+permissions: {}
+
+env:
+  TAG: ${{ inputs.tag }}
+  REGISTRY: https://shadybin.dev/registry
+  # TODO: pin to a shadybin release, the commit this workflow file is at.
+  SHADYBIN_REF: main
+  # shadybin's public keys, hex, comma-separated: cached reviews must be signed by one.
+  SHADYBIN_KEYS: d971638b671326b3831fb6962e0da516593a1af317b29521651bdf02bb2ed8fc
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      builds: ${{ steps.plan.outputs.builds }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: shadybin/shadybin
+          ref: ${{ env.SHADYBIN_REF }}
+          path: shadybin
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: shadybin/go.mod
+          cache: false
+
+      # shadybin is pure Go: one build per runner kind the project's builds use.
+      - name: Build shadybin
+        run: |
+          mkdir -p sb
+          for os in linux darwin; do for arch in amd64 arm64; do
+            (cd shadybin && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -o "../sb/shadybin-$os-$arch" ./cmd/shadybin)
+          done; done
+
+      - name: Plan the builds
+        id: plan
+        run: |
+          repo="github.com/${GITHUB_REPOSITORY,,}"
+          curl -fsSL "$REGISTRY/$repo/project.json" -o sb/project.json
+          echo "builds=$(jq -c '[.builds | to_entries[] | {index: .key, runner: .value.runner,
+            go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // "")}]' sb/project.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadybin
+          path: sb/
+
+  rebuild:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJSON(needs.plan.outputs.builds) }}
+    # GitHub-hosted only: a self-hosted runner is the vendor's own machine. The attestation
+    # records the runner kind, and intake refuses self-hosted.
+    runs-on: ${{ matrix.build.runner }}
+    permissions:
+      contents: read
+    steps:
+      # The tag at the workspace root, where the vendor's release job builds it: compilers
+      # can embed the source's path.
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: shadybin
+          path: ${{ runner.temp }}/sb
+
+      - uses: actions/setup-go@v6
+        if: matrix.build.go != ''
+        with:
+          go-version-file: ${{ matrix.build.go == 'go.mod' && 'go.mod' || '' }}
+          go-version: ${{ matrix.build.go != 'go.mod' && matrix.build.go || '' }}
+          cache: false
+
+      - uses: mlugg/setup-zig@v2
+        if: matrix.build.zig != ''
+        with:
+          version: ${{ matrix.build.zig }}
+
+      - name: Install Rust
+        if: matrix.build.rust != ''
+        env:
+          RUST: ${{ matrix.build.rust }}
+        run: |
+          if [ "$RUST" = rust-toolchain.toml ]; then rustup show active-toolchain || rustup toolchain install
+          else rustup toolchain install "$RUST" --profile minimal && rustup default "$RUST"; fi
+
+      - name: Rebuild
+        env:
+          INDEX: ${{ matrix.build.index }}
+        run: |
+          sb="$RUNNER_TEMP/sb"
+          os=$(uname -s | tr A-Z a-z); arch=$(uname -m); [ "$arch" = x86_64 ] && arch=amd64; [ "$arch" = aarch64 ] && arch=arm64
+          chmod +x "$sb/shadybin-$os-$arch"
+          "$sb/shadybin-$os-$arch" rebuild -project "$sb/project.json" -build "$INDEX" -tag "$TAG" -src . -out "$RUNNER_TEMP/rebuilt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rebuilt-${{ matrix.build.index }}
+          path: ${{ runner.temp }}/rebuilt/
+
+  certify:
+    needs: rebuild
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # attach the statement and report to the release
+      id-token: write # Sigstore identity for the attestation
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: shadybin
+          path: ${{ runner.temp }}/sb
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rebuilt-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/rebuilt
+
+      - name: Set up
+        run: |
+          sb="$RUNNER_TEMP/sb"; chmod +x "$sb/shadybin-linux-amd64"
+          echo "SB=$sb/shadybin-linux-amd64" >> "$GITHUB_ENV"
+          echo "PROJECT=$sb/project.json" >> "$GITHUB_ENV"
+          echo "WORK=$RUNNER_TEMP/work" >> "$GITHUB_ENV"; mkdir -p "$RUNNER_TEMP/work"
+          echo "REPO=github.com/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "LANGUAGE=$(jq -r .language "$sb/project.json")" >> "$GITHUB_ENV"
+          echo "ZIG=$(jq -r '[.builds[].toolchain.zig // empty][0] // ""' "$sb/project.json")" >> "$GITHUB_ENV"
+
+      # The analysis reads the code the way its language's tools do.
+      - uses: actions/setup-go@v6
+        if: env.LANGUAGE == 'go'
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: mlugg/setup-zig@v2
+        if: env.LANGUAGE == 'zig'
+        with:
+          version: ${{ env.ZIG }}
+      - name: Install Rust
+        if: env.LANGUAGE == 'rust'
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Compare with the published release
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$(jq -r .checksums "$PROJECT")" -D "$WORK/published"
+          cat "$WORK"/published/* > "$WORK/published-checksums.txt"
+          set +e
+          table=$("$SB" compare -published "$WORK/published-checksums.txt" "$RUNNER_TEMP/rebuilt")
+          code=$?
+          set -e
+          {
+            echo "# $REPO $TAG"
+            echo
+            echo "## Rebuild"
+            echo
+            echo "Rebuilt from tag \`$TAG\` ($(git rev-parse HEAD)) and compared with the published checksums."
+            echo
+            echo "$table"
+          } > "$WORK/rebuild.md"
+          cat "$WORK/rebuild.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      - name: Record what the code can do
+        run: |
+          "$SB" manifest -project "$PROJECT" -src . -o "$WORK/manifest.json"
+          # The base is the last certified release; with none, everything is reviewed whole.
+          prev=$(curl -fsS "$REGISTRY/$REPO/latest" || true)
+          if [[ "$prev" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] &&
+            curl -fsSL "$REGISTRY/$REPO/$prev/manifest.json" -o "$WORK/previous-manifest.json"; then
+            PREVIOUS_ARGS="-previous $WORK/previous-manifest.json -previous-tag $prev"
+            echo "PREVIOUS_ARGS=$PREVIOUS_ARGS" >> "$GITHUB_ENV"
+          fi
+          "$SB" capabilities $PREVIOUS_ARGS "$WORK/manifest.json" > "$WORK/capabilities.md"
+
+      - name: Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cache=()
+          if [ -n "$SHADYBIN_KEYS" ]; then cache=(-cache "$REGISTRY" -cache-key "$SHADYBIN_KEYS"); fi
+          "$SB" review -project "$PROJECT" -src . -manifest "$WORK/manifest.json" $PREVIOUS_ARGS \
+            "${cache[@]}" -o "$WORK/review.json" > "$WORK/review.md"
+          { cat "$WORK/rebuild.md"; echo; cat "$WORK/capabilities.md"; echo; cat "$WORK/review.md"; } > "$WORK/report.md"
+          cat "$WORK/review.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write the statement
+        run: |
+          "$SB" statement -registry "$WORK/bundle" -repo "$REPO" -tag "$TAG" -published "$WORK/published-checksums.txt" \
+            -report "$WORK/report.md" -manifest "$WORK/manifest.json" -review "$WORK/review.json" "$RUNNER_TEMP/rebuilt"
+          dir="$WORK/bundle/$REPO/$TAG"
+          mkdir -p "$WORK/out"
+          cp "$dir/statement.txt" "$WORK/out/shadybin-statement.txt"
+          cp "$dir/report.md" "$WORK/out/shadybin-report.md"
+          cp "$dir/manifest.json" "$WORK/out/shadybin-manifest.json"
+          cp "$dir/review.json" "$WORK/out/shadybin-review.json"
+
+      - name: Attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.WORK }}/out/shadybin-*
+
+      - name: Attach to the release
+        run: gh release upload "$TAG" "$WORK"/out/shadybin-* --clobber -R "$GITHUB_REPOSITORY"

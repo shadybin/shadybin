@@ -1,0 +1,168 @@
+{
+  "comment": "shadybin verifier conformance vectors. Keys are hex Ed25519 public keys to pin. For each case, verify statement and signature (the files as fetched) for repo and tag, and check file with digest; the result is the first check that fails, in the order signature, statement, release, verdict, file. See spec/SPEC.md.",
+  "keys": [
+    "888d3bc0f8e069e37689dbe965646fa0559a8a3b5b58e1e1bde816bdb4c11097"
+  ],
+  "cases": [
+    {
+      "name": "certified",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "ok"
+    },
+    {
+      "name": "repository asked in another case",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/Acme/Tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "ok"
+    },
+    {
+      "name": "key rotation: an unpinned key's line first",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "D8SM22mfpiC4qLQFzdZ+9gh5Il/dzezCghR3qQO0ER5Shi6tgIJP5fvHjhVTWuZ+TSjzX6sAtNPKXltKc8IQCw==\nIXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "ok"
+    },
+    {
+      "name": "signed by an unpinned key",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "D8SM22mfpiC4qLQFzdZ+9gh5Il/dzezCghR3qQO0ER5Shi6tgIJP5fvHjhVTWuZ+TSjzX6sAtNPKXltKc8IQCw==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_signature"
+    },
+    {
+      "name": "statement edited after signing",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.1\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.1",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_signature"
+    },
+    {
+      "name": "signature file empty",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_signature"
+    },
+    {
+      "name": "signature file not base64",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "not a signature\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_signature"
+    },
+    {
+      "name": "files not sorted",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\n",
+      "signature": "a+SycqFrxJ9VR6LO8fVP956tPCtNkC9xNhvOVlThz4XKIPaT3IaiZDfJook0BXGQ9on8S0argcbwWq5ifL7KAg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_statement"
+    },
+    {
+      "name": "CRLF line endings",
+      "statement": "shadybin statement v1\r\nrepo github.com/acme/tool\r\ntag v1.2.0\r\nverdict certified\r\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\r\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\r\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\r\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\r\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\r\n",
+      "signature": "J2DDXfAhTkwOzlwsCpip1RGLH+1NBrxACHwEsx+Gcaj7cMTw//YjK7JTXsTqSNtbt9KCfTKgoH2H+XMmAC7xCg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_statement"
+    },
+    {
+      "name": "uppercase hex",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068C1084DB9A9D1601A1EA4B451E8D8830329DA451FA8048F6585B24C65E9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "AscRNSn10awciie/6e6AAFDLTrYzDqcs8g/ZtQzSF6emj7ObzYvJ2NvRfJw1417SKQFRQtKEyZYsPmARWow9Bw==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_statement"
+    },
+    {
+      "name": "unknown statement version",
+      "statement": "shadybin statement v2\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "VjtHPSyGULiOFeWq/89XfpmtCoufS0xaOLKOo82jbBWEjJIlcl0TGHV6G4ZVO46jW9/jp8niUqCAoso/eCLrCw==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "bad_statement"
+    },
+    {
+      "name": "statement for another tag",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.3.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "wrong_release"
+    },
+    {
+      "name": "statement for another repository",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/other",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "wrong_release"
+    },
+    {
+      "name": "rejected on review",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict rejected\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "gk9ECjqb+nibcv0vJUZr5P1M2z07T5anHVeG3s2/9vPsP8uMqIDe6Q3RypOA1VeYQxE3gnZTDT1W7Ihu8F9IAw==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "rejected"
+    },
+    {
+      "name": "file with another digest",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Darwin_arm64.tar.gz",
+      "digest": "sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e",
+      "result": "not_listed"
+    },
+    {
+      "name": "file not in the release",
+      "statement": "shadybin statement v1\nrepo github.com/acme/tool\ntag v1.2.0\nverdict certified\nreport sha256:845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917\nmanifest sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\nreview sha256:c97ace4c8fef2cee8fa0f3c9f52aab18dbd4f42438afe362ffb8f75ce4c04b84\nfile sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533 tool_Darwin_arm64.tar.gz\nfile sha256:17654c6329451477f47d7282ae377c716cb7dff6641a53819dbaa1a7fa19470e tool_Linux_x86_64.tar.gz\n",
+      "signature": "IXE1NpP9Hfv3ajOupxzQNBJi5Qv/jwvFD8q6P6/b6Mx6TfvTXyq1PTyVvwdLmn5rOVADEhHcMIlIo2P2Lv7ADg==\n",
+      "repo": "github.com/acme/tool",
+      "tag": "v1.2.0",
+      "file": "tool_Windows_x86_64.zip",
+      "digest": "sha256:068c1084db9a9d1601a1ea4b451e8d8830329da451fa8048f6585b24c65e9533",
+      "result": "not_listed"
+    }
+  ]
+}
