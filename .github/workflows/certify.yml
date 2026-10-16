@@ -36,7 +36,9 @@ permissions: {}
 
 env:
   TAG: ${{ inputs.tag }}
-  REGISTRY: https://shadybin.dev/registry
+  # The registry repository itself, read raw: certify only reads it, and the repository is
+  # the record, so this needs no DNS and no Pages build to have caught up.
+  REGISTRY: https://raw.githubusercontent.com/shadybin/registry/main
   # TODO: pin to a shadybin release, the commit this workflow file is at.
   SHADYBIN_REF: main
   # shadybin's public keys, hex, comma-separated: cached reviews must be signed by one.
