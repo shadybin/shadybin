@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -398,5 +399,76 @@ func TestResume(t *testing.T) {
 	}
 	if good.calls.Load() != 1 {
 		t.Fatalf("the second run made %d calls; the first unit should have come from the resume directory", good.calls.Load())
+	}
+}
+
+// TestTooLargeSurface: a third-party module whose surface is too large to review whole
+// still has its packages with a sensitive capability reviewed, since the verdict needs
+// them; one with none is pinned unreviewed.
+func TestTooLargeSurface(t *testing.T) {
+	defer func(n int) { maxSurface = n }(maxSurface)
+	maxSurface = 100
+	src := t.TempDir()
+	write(t, filepath.Join(src, "main.go"), "package main\n")
+	project := &Module{Path: mod, Dir: src, Main: true, Files: map[string][]string{mod: {"main.go"}}}
+	big := strings.Repeat("// generated\n", 20)
+	dep := func(name string, files map[string]string) *Module {
+		dir := t.TempDir()
+		m := &Module{Path: name, Version: "v1.0.0", Dir: dir, Files: map[string][]string{}}
+		for f, text := range files {
+			write(t, filepath.Join(dir, f), text)
+			pkg := name
+			if d := filepath.Dir(f); d != "." {
+				pkg = name + "/" + d
+			}
+			m.Files[pkg] = append(m.Files[pkg], f)
+		}
+		return m
+	}
+	sdk := dep("github.com/other/sdk", map[string]string{
+		"client.go":       "package sdk\n\n// talks to the network\n" + big,
+		"asm/asm_amd64.s": "// assembly, surface but no capability\n" + big,
+		"util/util.go":    "package util\n\nfunc Plain() {}\n",
+	})
+	blob := dep("github.com/other/blob", map[string]string{"blob_amd64.s": "// only assembly\n" + big})
+	m := testManifest(map[string][]string{"github.com/other/sdk": {"NETWORK"}},
+		map[string]string{"github.com/other/sdk": "v1.0.0", "github.com/other/blob": "v1.0.0"})
+	in := Inputs{Src: src, Source: fakeSource{mods: []*Module{project, sdk, blob}}, Manifest: m}
+	plan, err := Gather(context.Background(), in, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := map[string]string{}
+	for _, mi := range plan.Modules {
+		scope[mi.Path] = mi.Scope
+	}
+	var units []Unit
+	for _, u := range plan.Units {
+		if u.Module == "github.com/other/sdk" {
+			units = append(units, u)
+		}
+	}
+	if scope["github.com/other/sdk"] != ScopeCapabilities || len(units) == 0 {
+		t.Fatalf("the networked package should be reviewed: scope %q, %d units", scope["github.com/other/sdk"], len(units))
+	}
+	var input strings.Builder
+	for _, u := range units {
+		input.WriteString(u.input)
+		if !slices.Contains(u.Packages, "github.com/other/sdk") {
+			t.Errorf("unit does not cover the networked package: %v", u.Packages)
+		}
+	}
+	if !strings.Contains(input.String(), "talks to the network") || strings.Contains(input.String(), "assembly, surface") {
+		t.Errorf("should hold the networked package and not the rest of the surface:\n%s", input.String())
+	}
+	if scope["github.com/other/blob"] != ScopeTooLarge {
+		t.Errorf("a too-large surface with no capability should be pinned: %q", scope["github.com/other/blob"])
+	}
+	r := &Review{Units: units}
+	for i := range r.Units {
+		r.Units[i].Result = &Result{Verdict: "pass", Capabilities: []Explanation{{Package: "github.com/other/sdk", Capability: "NETWORK", Explanation: "its API client"}}}
+	}
+	if v, reasons := Decide(r, m, nil); v != Certified {
+		t.Errorf("reviewed capabilities should certify: %s %v", v, reasons)
 	}
 }

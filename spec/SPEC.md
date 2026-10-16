@@ -210,8 +210,10 @@ The code is split into units, one model call each:
   the program loads (`init`, constructors); binary, assembly and C files; files with
   embedding, linking or foreign-function markers; files that run programs, use the
   network or load code; and, for Go, every file of a package with a sensitive capability.
-  A surface over about 500k tokens is not reviewed: the module stays pinned to its exact
-  release, the report says so, and every later version change is reviewed as a diff.
+  Of a surface over about 500k tokens, only the packages with a sensitive capability are
+  reviewed, however large, since the verdict needs every one of them reviewed. The rest
+  stays pinned to its exact release, the report says so, and every later version change
+  is reviewed as a diff.
 - **A third-party module at the version the previous certified release had** needs no
   unit: it was reviewed then.
 

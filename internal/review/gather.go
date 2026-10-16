@@ -26,11 +26,13 @@ const maxPart = 1_200_000
 // maxReadme bounds the project README given as the vendor's own account of the tool.
 const maxReadme = 20_000
 
-// maxSurface bounds a third-party module's surface, about 500k tokens. A module whose
-// surface is larger, such as SQLite's single 9 MB C file, is not reviewed when it first
-// appears: it stays pinned to the exact upstream release, the report says it was too
-// large to review, and every later version change is reviewed as a diff.
-const maxSurface = 2_000_000
+// maxSurface bounds a third-party module's surface, about 500k tokens. Of a module whose
+// surface is larger, only the packages with a sensitive capability are reviewed when it
+// first appears, since the verdict needs each of them reviewed: a 5 MB generated API
+// client is still read. The rest, such as SQLite's single 9 MB C file, stays pinned to
+// the exact upstream release, the report says so, and every later version change is
+// reviewed as a diff. A variable, so tests can make it small.
+var maxSurface = 2_000_000
 
 // Inputs is what the units are gathered from.
 type Inputs struct {
@@ -61,8 +63,13 @@ const (
 	// gets in: what runs at build or load time, what is not plain source, and the packages
 	// that can act on the world.
 	ScopeSurface = "surface"
-	// ScopeTooLarge is a third-party module whose surface is over maxSurface: pinned, and
-	// not reviewed until its version changes.
+	// ScopeCapabilities is a third-party module whose surface is over maxSurface: its
+	// packages with a sensitive capability reviewed whole, the rest of its surface pinned,
+	// and reviewed as a diff when its version changes.
+	ScopeCapabilities = "capabilities"
+	// ScopeTooLarge is a third-party module whose surface is over maxSurface and has no
+	// package with a sensitive capability: pinned, and not reviewed until its version
+	// changes.
 	ScopeTooLarge = "too large"
 )
 
@@ -255,7 +262,14 @@ func moduleUnits(ctx context.Context, in Inputs, m *Module, isOwned bool, log io
 		size += len(p.text)
 	}
 	if size > maxSurface {
-		return nil, ScopeTooLarge, nil
+		// The verdict requires every package with a sensitive capability to be reviewed, so
+		// those are, however large; only the rest of the surface waits for a diff.
+		pieces = slices.DeleteFunc(pieces, func(p piece) bool { return !sensitivePackage(in, p.pkg) })
+		if len(pieces) == 0 {
+			return nil, ScopeTooLarge, nil
+		}
+		base.Scope = ScopeCapabilities
+		return split(base, header+", newly compiled in, with a surface too large to review whole: only its packages that can act on the world", "", pieces, in), ScopeCapabilities, nil
 	}
 	base.Scope = ScopeSurface
 	return split(base, header+", newly compiled in: only its surface, the parts through which a supply-chain attack gets in", "", pieces, in), ScopeSurface, nil
@@ -267,19 +281,20 @@ func moduleUnits(ctx context.Context, in Inputs, m *Module, isOwned bool, log io
 func surface(in Inputs, m *Module, pieces []piece) []piece {
 	var keep []piece
 	for _, p := range pieces {
-		sensitivePkg := false
-		if in.Manifest != nil {
-			for _, c := range in.Manifest.Notable(p.pkg) {
-				if sensitive(c) {
-					sensitivePkg = true
-				}
-			}
-		}
-		if sensitivePkg || p.surface {
+		if sensitivePackage(in, p.pkg) || p.surface {
 			keep = append(keep, p)
 		}
 	}
 	return keep
+}
+
+// sensitivePackage reports whether a package has a sensitive capability in the release's
+// manifest: one the verdict needs a review to explain.
+func sensitivePackage(in Inputs, pkg string) bool {
+	if in.Manifest == nil {
+		return false
+	}
+	return slices.ContainsFunc(in.Manifest.Notable(pkg), sensitive)
 }
 
 // diffPieces are a module's changes between an older copy, in old, and the one compiled in.

@@ -47,6 +47,8 @@ func (r *Review) Markdown(w io.Writer) {
 			title += " " + u.From + " → " + u.To
 		case u.Scope == ScopeSurface:
 			title += " " + u.To + ", surface"
+		case u.Scope == ScopeCapabilities:
+			title += " " + u.To + ", packages that can act on the world"
 		case u.To != "":
 			title += " " + u.To
 		default:
@@ -100,6 +102,8 @@ func (r *Review) modules(w io.Writer) {
 			key = "Third-party, new to the project: reviewed at its surface (build-time and load-time code, binaries, assembly and C, and packages that can act on the world)"
 		case m.Scope == ScopeDiff:
 			key = "Third-party, version changed: the change reviewed"
+		case m.Scope == ScopeCapabilities:
+			key = "Third-party, new to the project, with a surface too large to review whole: its packages that can act on the world reviewed, the rest pinned to its exact release and reviewed as a diff when its version changes"
 		case m.Scope == ScopeTooLarge:
 			key = "Third-party, new to the project, too large to review at its surface: pinned to its exact release, and reviewed as a diff when its version changes"
 		case m.Scope == "unchanged":
