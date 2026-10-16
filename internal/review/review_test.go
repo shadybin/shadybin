@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -201,7 +202,7 @@ func TestRunAndCache(t *testing.T) {
 	reg := t.TempDir()
 	cache := &Cache{Registry: reg, Keys: []ed25519.PublicKey{pub}}
 
-	r, err := Run(context.Background(), Inputs{Manifest: m}, &Plan{Units: newUnits()}, model, cache, io.Discard)
+	r, err := Run(context.Background(), Inputs{Manifest: m}, &Plan{Units: newUnits()}, model, cache, "", io.Discard)
 	if err != nil || r.Verdict != Certified || model.calls.Load() != 1 || r.Units[0].Cached {
 		t.Fatalf("first run: %+v %v, %d calls", r, err, model.calls.Load())
 	}
@@ -209,7 +210,7 @@ func TestRunAndCache(t *testing.T) {
 		t.Fatalf("WriteEntries: %d %v", n, err)
 	}
 
-	r, err = Run(context.Background(), Inputs{Manifest: m}, &Plan{Units: newUnits()}, model, cache, io.Discard)
+	r, err = Run(context.Background(), Inputs{Manifest: m}, &Plan{Units: newUnits()}, model, cache, "", io.Discard)
 	if err != nil || r.Verdict != Certified || model.calls.Load() != 1 || !r.Units[0].Cached {
 		t.Fatalf("second run should come from the cache: %+v %v, %d calls", r, err, model.calls.Load())
 	}
@@ -362,5 +363,40 @@ func TestTiers(t *testing.T) {
 	}
 	if !n.Cacheable() || !b.Cacheable() || !o.Cacheable() || p.Cacheable() {
 		t.Error("versioned modules are cacheable, the project is not")
+	}
+}
+
+type failing struct{ fake }
+
+func (f *failing) Review(ctx context.Context, input string) (*Result, string, error) {
+	if strings.Contains(input, "second") {
+		f.calls.Add(1)
+		return nil, "", errors.New("credit balance is too low")
+	}
+	return f.fake.Review(ctx, input)
+}
+
+// TestResume: a run that fails partway keeps what it was answered, and the next run
+// pays only for the rest.
+func TestResume(t *testing.T) {
+	units := func() []Unit {
+		return digest([]Unit{
+			{Kind: KindThirdParty, Module: "a", To: "v1", Part: 1, Parts: 1, input: "first"},
+			{Kind: KindThirdParty, Module: "b", To: "v1", Part: 1, Parts: 1, input: "second"},
+		})
+	}
+	dir := t.TempDir()
+	m := testManifest(map[string][]string{}, map[string]string{})
+	bad := &failing{fake{result: pass()}}
+	if _, err := Run(context.Background(), Inputs{Manifest: m}, &Plan{Units: units()}, bad, nil, dir, io.Discard); err == nil {
+		t.Fatal("a failed unit did not fail the run")
+	}
+	good := &fake{result: pass()}
+	r, err := Run(context.Background(), Inputs{Manifest: m}, &Plan{Units: units()}, good, nil, dir, io.Discard)
+	if err != nil || r.Verdict != Certified {
+		t.Fatalf("%v %v", r, err)
+	}
+	if good.calls.Load() != 1 {
+		t.Fatalf("the second run made %d calls; the first unit should have come from the resume directory", good.calls.Load())
 	}
 }

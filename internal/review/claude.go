@@ -29,7 +29,8 @@ const endpoint = "https://api.anthropic.com/"
 
 // NewClaude returns a reviewer on the Claude API, with credentials from the environment.
 func NewClaude() *Claude {
-	return &Claude{Client: anthropic.NewClient(option.WithBaseURL(endpoint))}
+	// Rate limits and overloads pass; the SDK backs off, honouring retry-after.
+	return &Claude{Client: anthropic.NewClient(option.WithBaseURL(endpoint), option.WithMaxRetries(8))}
 }
 
 // ErrRefused means the model declined to review, even after the fallback. It is never a

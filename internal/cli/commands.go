@@ -365,6 +365,7 @@ func runReview(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	cacheFrom := fs.String("cache", "", "registry URL or directory to read cached dependency reviews from")
 	cacheKeys := fs.String("cache-key", "", "shadybin public keys, hex, comma-separated, that cache entries must be signed by")
 	out := fs.String("o", "", "file to write review.json to")
+	resume := fs.String("resume", "", "directory keeping each answered unit, so a failed run can resume; empty means <o>.units")
 	dryRun := fs.Bool("dry-run", false, "list the units and their size, and call no model")
 	if err := parse(fs, args, "project", "src", "manifest"); err != nil {
 		return err
@@ -440,7 +441,10 @@ func runReview(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		fmt.Fprintf(stdout, "%d units, about %dk input tokens to review\n", len(plan.Units), total/1000)
 		return nil
 	}
-	rv, err := review.Run(ctx, in, plan, review.NewClaude(), cache, stderr)
+	if *resume == "" {
+		*resume = *out + ".units"
+	}
+	rv, err := review.Run(ctx, in, plan, review.NewClaude(), cache, *resume, stderr)
 	if err != nil {
 		return err
 	}
