@@ -92,7 +92,7 @@ The registry is the public repository `shadybin/registry`, served by GitHub Page
 `https://shadybin.dev/registry`. Its commit history is the record of every certification.
 
 ```text
-<repo>/project.json             how shadybin rebuilds and reviews the project
+<repo>/shadybin.json             how shadybin rebuilds and reviews the project
 <repo>/badge.json               shields.io badge: the newest release's version and verdict
 <repo>/latest                   the newest certified release's tag
 <repo>/<tag>/statement.txt
@@ -127,7 +127,7 @@ shown to a reviewer again.
 
 A certified release is never rewritten.
 
-## project.json
+## shadybin.json
 
 How a project is rebuilt and reviewed lives in the registry, not the vendor's
 repository, so a vendor cannot change how its release is checked from the release being
@@ -151,10 +151,10 @@ checked.
 - `vendored`: third-party copies kept in the repository. Each has its `path`, the
   upstream release's `name` and `version`, and its archive's `url` and `sha256`.
 
-Everything a rebuild runs is either in `project.json`, which shadybin controls, or in
+Everything a rebuild runs is either in `shadybin.json`, which shadybin controls, or in
 the reviewed source: `build.zig`, `build.rs`, `.goreleaser.yaml` (name it in `files`).
 Build code could otherwise fetch the published binary and present it as rebuilt.
-`project.json` therefore never calls a vendor's own actions or scripts that the review
+`shadybin.json` therefore never calls a vendor's own actions or scripts that the review
 does not cover; it installs toolchains itself.
 
 A build is reproducible only if the vendor's release build is. Go needs `-trimpath`,
@@ -181,11 +181,22 @@ have no capability analysis; their manifests list packages and versions only.
 Each language's tools say which code is compiled in:
 
 - **Go:** `go list` for each target, file by file.
-- **Zig:** the files `build.zig.zon` `.paths` name, and the dependency tree as `zig
-  build --fetch` fetches it. A lazy dependency the build never needs is not compiled in.
+- **Zig:** the files `build.zig.zon` `.paths` name, and every dependency it names, lazy
+  ones too, each fetched by URL with `zig fetch` and checked against its pinned hash.
+  Knowing which lazy dependencies a build asks for would mean running `build.zig`. A
+  package the repository carries in its own `zig-pkg` is the vendor's code.
 - **Rust:** `cargo metadata` for each target, through normal and build dependencies.
   Build scripts and proc macros run at build time, so they count. Dev-dependencies do
-  not.
+  not. A crate served from a directory in the repository, by source replacement, is the
+  vendor's code.
+
+None of this runs the vendor's code. The job that reviews and attests holds the vendor's
+API key and the identity that attests, so a program of the vendor's running there could
+rewrite what it attests. `build.zig` never runs; cargo runs with its toolchain, `rustc`
+and wrappers pinned over anything `rust-toolchain.toml` or `.cargo/config.toml` says;
+every tool runs without credentials in its environment. Only the rebuild jobs run the
+vendor's build, and they hold no secrets. The certify job takes the rebuilt files only
+from those jobs' own artifacts, since any job in the vendor's workflow run could add one.
 
 Code is either **the vendor's** or **third-party**. The vendor's is whatever it can edit
 without anyone else's checksum noticing: everything in its repository, vendored copies
@@ -272,7 +283,7 @@ reviewed once, paid for by the first vendor who compiles it in.
 1. The vendor's release workflow calls `shadybin/shadybin/.github/workflows/certify.yml`
    after the release is published, at `@v1`, which moves to each compatible release, or
    pinned to an exact one. It runs on the vendor's GitHub-hosted runners:
-   - `plan` builds shadybin and reads `project.json` from the registry.
+   - `plan` builds shadybin and reads `shadybin.json` from the registry.
    - `rebuild` runs each build on its own runner, with the tag checked out at the
      workspace root as the vendor's release job has it.
    - `certify` compares the rebuilt files with the published checksums, writes the

@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+
+	cleanenv "github.com/shadybin/shadybin/internal/env"
 )
 
 // Go is the Source for Go projects: what go list says the patterns compile, for each GOOS.
@@ -27,7 +29,8 @@ func (g Go) Modules(ctx context.Context, src string, log io.Writer) ([]*Module, 
 		var out bytes.Buffer
 		cmd := exec.CommandContext(ctx, "go", append([]string{"list", "-deps", "-json"}, g.Patterns...)...)
 		cmd.Dir, cmd.Stdout, cmd.Stderr = src, &out, log
-		cmd.Env = append(os.Environ(), "GOOS="+target)
+		env, _ := cleanenv.Clean(os.Environ())
+		cmd.Env = append(env, "GOOS="+target)
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("go list for %s: %w", target, err)
 		}
@@ -55,6 +58,11 @@ func (g Go) Modules(ctx context.Context, src string, log io.Writer) ([]*Module, 
 			if r := p.Module.Replace; r != nil {
 				// A replacement is the code compiled in; a local one has no version.
 				version, dir = r.Version, r.Dir
+			}
+			if dir == "" && inside(p.Dir, filepath.Join(src, "vendor")) {
+				// With a vendor directory, go list names no module directory: the module's
+				// copy is in the repository, where the vendor can edit it.
+				dir = filepath.Join(src, "vendor", filepath.FromSlash(p.Module.Path))
 			}
 			m := mods[p.Module.Path]
 			if m == nil {

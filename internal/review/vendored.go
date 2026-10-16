@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-// Vendored is a third-party copy kept in the repository, as project.json declares it.
+// Vendored is a third-party copy kept in the repository, as shadybin.json declares it.
 type Vendored struct {
 	// Path is the copy's directory in the repository.
 	Path string
@@ -129,7 +129,7 @@ func fetchArchive(ctx context.Context, url, want string) (archive, error) {
 	}
 	sum := sha256.Sum256(data)
 	if got := hex.EncodeToString(sum[:]); got != strings.ToLower(want) {
-		return nil, fmt.Errorf("%s has sha256 %s, not the %s project.json names", url, got, want)
+		return nil, fmt.Errorf("%s has sha256 %s, not the %s shadybin.json names", url, got, want)
 	}
 	return readArchive(url, data)
 }

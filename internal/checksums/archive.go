@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -93,6 +94,9 @@ func entries(path string) (map[string]entry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
+		if err := zipConsistent(data, zr); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 		for _, f := range zr.File {
 			rc, err := f.Open()
 			if err != nil {
@@ -124,6 +128,15 @@ func entries(path string) (map[string]entry, error) {
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
+			// Past the end-of-archive marker there must be nothing but padding: an
+			// extractor told to read on (tar --ignore-zeros) would find more entries.
+			rest, err := io.ReadAll(io.LimitReader(gz, maxArchive))
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			if bytes.ContainsFunc(rest, func(r rune) bool { return r != 0 }) {
+				return nil, fmt.Errorf("%s: data after the end of the archive", path)
+			}
 			break
 		}
 		if err != nil {
@@ -190,4 +203,76 @@ func xattrs(hdr *tar.Header) string {
 	}
 	slices.Sort(out)
 	return strings.Join(out, "\x00")
+}
+
+// zipConsistent checks a zip says the same thing to every extractor. Go reads the central
+// directory at the end; a streaming extractor reads the local header before each entry's
+// data. So the local headers must run from the first byte, one per central entry, in its
+// order, with the same name, method and sizes, each entry's data following its header and
+// the next header following the data, up to the central directory, and the archive must
+// end where its end record says. Anything else, a crafted zip could hide.
+func zipConsistent(data []byte, zr *zip.Reader) error {
+	le := func(off, n int) (uint64, bool) {
+		if off < 0 || off+n > len(data) {
+			return 0, false
+		}
+		var v uint64
+		for i := n - 1; i >= 0; i-- {
+			v = v<<8 | uint64(data[off+i])
+		}
+		return v, true
+	}
+	off := 0
+	for _, f := range zr.File {
+		if sig, ok := le(off, 4); !ok || sig != 0x04034b50 {
+			return fmt.Errorf("%s: no local header where one should start", f.Name)
+		}
+		flags, _ := le(off+6, 2)
+		method, _ := le(off+8, 2)
+		csize, _ := le(off+18, 4)
+		usize, _ := le(off+22, 4)
+		nameLen, _ := le(off+26, 2)
+		extraLen, ok := le(off+28, 2)
+		if !ok {
+			return fmt.Errorf("%s: truncated local header", f.Name)
+		}
+		nameEnd := off + 30 + int(nameLen)
+		if nameEnd > len(data) || string(data[off+30:nameEnd]) != f.Name {
+			return fmt.Errorf("%s: its local header names another file", f.Name)
+		}
+		if uint16(method) != f.Method {
+			return fmt.Errorf("%s: its local header has another compression method", f.Name)
+		}
+		start := nameEnd + int(extraLen)
+		if got, err := f.DataOffset(); err != nil || got != int64(start) {
+			return fmt.Errorf("%s: its data is not where its local header says", f.Name)
+		}
+		zip64 := csize == 0xffffffff || usize == 0xffffffff
+		if flags&0x8 == 0 && !zip64 && (csize != f.CompressedSize64 || usize != f.UncompressedSize64) {
+			return fmt.Errorf("%s: its local header has other sizes", f.Name)
+		}
+		off = start + int(f.CompressedSize64)
+		if flags&0x8 != 0 { // a data descriptor follows the data
+			if sig, ok := le(off, 4); ok && sig == 0x08074b50 {
+				off += 4
+			}
+			if zip64 || f.CompressedSize64 >= 0xffffffff || f.UncompressedSize64 >= 0xffffffff {
+				off += 20
+			} else {
+				off += 12
+			}
+		}
+	}
+	if sig, ok := le(off, 4); !ok || sig != 0x02014b50 {
+		return errors.New("data between the last entry and the central directory")
+	}
+	// The end record is the last thing in the file, its comment included.
+	for p := len(data) - 22; p >= 0 && p >= len(data)-22-0xffff; p-- {
+		if sig, _ := le(p, 4); sig == 0x06054b50 {
+			if n, _ := le(p+20, 2); p+22+int(n) == len(data) {
+				return nil
+			}
+		}
+	}
+	return errors.New("data after the end of the archive")
 }

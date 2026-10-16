@@ -50,7 +50,7 @@ func WritePages(root string) error {
 		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".github" || d.Name() == "deps") {
 			return filepath.SkipDir
 		}
-		if d.IsDir() || d.Name() != "project.json" {
+		if d.IsDir() || d.Name() != "shadybin.json" {
 			return nil
 		}
 		dir := filepath.Dir(path)
@@ -198,7 +198,7 @@ var projectPage = template.Must(template.New("project").Funcs(funcs).Parse(pageH
 <title>{{.Repo}}: shadybin</title></head><body>` + pageHeader + `
 <main><div class="wrap">
 <h1>{{.Repo}}</h1>
-<p class="sub"><img class="badge" src="{{.Badge}}" alt="badge"> · <a href="{{upstream .Repo}}">source</a> · <a href="{{repoURL}}/{{.Repo}}/project.json">how it is rebuilt</a></p>
+<p class="sub"><img class="badge" src="{{.Badge}}" alt="badge"> · <a href="{{upstream .Repo}}">source</a> · <a href="{{repoURL}}/{{.Repo}}/shadybin.json">how it is rebuilt</a></p>
 {{if .Releases}}<table>
 <tr><th>Release</th><th>Verdict</th><th>Files</th></tr>
 {{range .Releases}}<tr>

@@ -48,3 +48,10 @@ make build   # → bin/shadybin
   the v1 contract; changing them is a v2. To release: tag `vX.Y.Z` on `main`, move `v1`
   to it, and add its commit to the registry's `.github/certify-commits`, or intake
   will not accept its attestations.
+- The certify job never runs the vendor's code: it holds the vendor's API key and the
+  identity that attests, so such code could rewrite what is attested, and through the
+  shared cache, what other projects are told. Analysis tools run without credentials
+  (`internal/env`), with nothing they would execute taken from the repository's
+  configuration. Only rebuild jobs, which hold no secrets, run the vendor's build. Code the
+  vendor can edit (in its repository, however it got there) is the vendor's, never
+  third-party.

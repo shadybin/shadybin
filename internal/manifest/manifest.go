@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+
+	cleanenv "github.com/shadybin/shadybin/internal/env"
 )
 
 // Capslock is the analyser, pinned: a different version can classify the same code
@@ -145,7 +147,8 @@ func goCmd(ctx context.Context, dir string, env []string, log io.Writer, args ..
 	var out bytes.Buffer
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, &out, log
-	cmd.Env = append(os.Environ(), env...)
+	clean, _ := cleanenv.Clean(os.Environ())
+	cmd.Env = append(clean, env...)
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("go %s: %w", strings.Join(args, " "), err)
 	}

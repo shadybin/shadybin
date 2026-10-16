@@ -1,5 +1,5 @@
 # A v1.2.3 tag publishes shadybin's CLI and certifies it with shadybin, like any vendor's
-# release: make dist builds the binaries, the registry's project.json for shadybin rebuilds
+# release: make dist builds the binaries, the registry's shadybin.json for shadybin rebuilds
 # them the same way, and certify reviews the code on shadybin's own Claude API key.
 #
 # Afterwards, by hand (only org admins can move v* tags): move v1 to the tag, and add the

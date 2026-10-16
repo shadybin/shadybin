@@ -42,7 +42,7 @@ func runKeygen(_ context.Context, args []string, stdout, stderr io.Writer) error
 
 func runRebuild(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flags("rebuild", "", stderr)
-	project := fs.String("project", "", "the project's project.json")
+	project := fs.String("project", "", "the project's shadybin.json")
 	tag := fs.String("tag", "", "the tag to rebuild")
 	src := fs.String("src", "", "a clean checkout of the tag; empty clones it")
 	out := fs.String("out", "", "directory to collect the built files in")
@@ -325,7 +325,7 @@ func runSign(_ context.Context, args []string, stdout, stderr io.Writer) error {
 
 func runManifest(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flags("manifest", "", stderr)
-	project := fs.String("project", "", "the project's project.json")
+	project := fs.String("project", "", "the project's shadybin.json")
 	src := fs.String("src", "", "the checkout to analyse")
 	out := fs.String("o", "", "file to write manifest.json to")
 	if err := parse(fs, args, "project", "src", "o"); err != nil {
@@ -373,7 +373,7 @@ func runCapabilities(_ context.Context, args []string, stdout, stderr io.Writer)
 
 func runReview(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flags("review", "", stderr)
-	project := fs.String("project", "", "the project's project.json")
+	project := fs.String("project", "", "the project's shadybin.json")
 	src := fs.String("src", "", "a clean checkout of the release's tag, with tags fetched")
 	manifestFile := fs.String("manifest", "", "the release's manifest.json")
 	previous := fs.String("previous", "", "the last certified release's manifest.json; empty reviews everything whole")

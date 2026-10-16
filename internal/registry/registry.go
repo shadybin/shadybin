@@ -1,7 +1,7 @@
 // Package registry lays out the registry repository: one directory per project, holding
 // how to rebuild it and one directory per certified release.
 //
-//	<repo>/project.json            how to rebuild the project
+//	<repo>/shadybin.json            how to rebuild the project
 //	<repo>/badge.json              shields.io endpoint badge: the latest release, its standing
 //	<repo>/<tag>/badge.json        the release's own badge
 //	<repo>/latest                  the newest certified release's tag: the next review's base
@@ -25,7 +25,7 @@ import (
 	"github.com/shadybin/shadybin/verify"
 )
 
-// Project is a project's project.json: how shadybin rebuilds and reviews a release. It
+// Project is a project's shadybin.json: how shadybin rebuilds and reviews a release. It
 // lives in the registry, not the vendor's repository, so a vendor cannot change how its own
 // release is checked from the release it is checking.
 type Project struct {
@@ -101,7 +101,7 @@ func (p *Project) CloneURL() string {
 	return "https://" + p.Repo + ".git"
 }
 
-// LoadProject reads and checks a project.json.
+// LoadProject reads and checks a shadybin.json.
 func LoadProject(path string) (*Project, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

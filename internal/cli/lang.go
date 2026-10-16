@@ -26,7 +26,7 @@ func sourceFor(p *registry.Project, previousTag string) review.Source {
 	panic(fmt.Sprintf("no source for %q", p.Language))
 }
 
-// vendoredFor converts project.json's vendored copies for the review.
+// vendoredFor converts shadybin.json's vendored copies for the review.
 func vendoredFor(p *registry.Project) []review.Vendored {
 	var out []review.Vendored
 	for _, v := range p.Vendored {

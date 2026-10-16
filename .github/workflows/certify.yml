@@ -13,7 +13,7 @@
 # lets Dependabot bump it. Only a change to the inputs, the secrets or the permissions
 # above is a v2.
 #
-# plan reads how to rebuild the project from the registry's project.json, not the
+# plan reads how to rebuild the project from the registry's shadybin.json, not the
 # vendor's repository. rebuild runs each of its builds on that build's own runner, since a
 # macOS binary may need macOS. certify compares what was rebuilt with what was published,
 # records what the code can do, has Claude review the code the vendor controls and the
@@ -93,9 +93,9 @@ jobs:
         id: plan
         run: |
           repo="github.com/${GITHUB_REPOSITORY,,}"
-          curl -fsSL "$REGISTRY/$repo/project.json" -o sb/project.json
+          curl -fsSL "$REGISTRY/$repo/shadybin.json" -o sb/shadybin.json
           echo "builds=$(jq -c '[.builds | to_entries[] | {index: .key, runner: .value.runner,
-            go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // "")}]' sb/project.json)" >> "$GITHUB_OUTPUT"
+            go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // "")}]' sb/shadybin.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -154,7 +154,7 @@ jobs:
           sb="$RUNNER_TEMP/sb"
           os=$(uname -s | tr A-Z a-z); arch=$(uname -m); [ "$arch" = x86_64 ] && arch=amd64; [ "$arch" = aarch64 ] && arch=arm64
           chmod +x "$sb/shadybin-$os-$arch"
-          "$sb/shadybin-$os-$arch" rebuild -project "$sb/project.json" -build "$INDEX" -tag "$TAG" -src . -out "$RUNNER_TEMP/rebuilt"
+          "$sb/shadybin-$os-$arch" rebuild -project "$sb/shadybin.json" -build "$INDEX" -tag "$TAG" -src . -out "$RUNNER_TEMP/rebuilt"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -182,21 +182,43 @@ jobs:
           name: shadybin
           path: ${{ runner.temp }}/sb
 
+      # Every job in the vendor's workflow run shares its artifacts, so a job of the vendor's
+      # own could add a rebuilt-<anything> artifact holding the published files. Only the
+      # rebuild jobs' own artifacts, rebuilt-0 to rebuilt-<n-1>, are taken, and any other
+      # fails the run. A vendor's job cannot take one of those names first without the rebuild
+      # job's upload failing.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: rebuilt-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/rebuilt
+          path: ${{ runner.temp }}/rebuilt-artifacts
 
       - name: Set up
         run: |
           sb="$RUNNER_TEMP/sb"; chmod +x "$sb/shadybin-linux-amd64"
           echo "SB=$sb/shadybin-linux-amd64" >> "$GITHUB_ENV"
-          echo "PROJECT=$sb/project.json" >> "$GITHUB_ENV"
+          echo "PROJECT=$sb/shadybin.json" >> "$GITHUB_ENV"
           echo "WORK=$RUNNER_TEMP/work" >> "$GITHUB_ENV"; mkdir -p "$RUNNER_TEMP/work"
           echo "REPO=github.com/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-          echo "LANGUAGE=$(jq -r .language "$sb/project.json")" >> "$GITHUB_ENV"
-          echo "ZIG=$(jq -r '[.builds[].toolchain.zig // empty][0] // ""' "$sb/project.json")" >> "$GITHUB_ENV"
+          echo "LANGUAGE=$(jq -r .language "$sb/shadybin.json")" >> "$GITHUB_ENV"
+          echo "ZIG=$(jq -r '[.builds[].toolchain.zig // empty][0] // ""' "$sb/shadybin.json")" >> "$GITHUB_ENV"
+          echo "RUST=$(jq -r '[.builds[].toolchain.rust // empty][0] // ""' "$sb/shadybin.json")" >> "$GITHUB_ENV"
+          builds=$(jq '.builds | length' "$sb/shadybin.json")
+          mkdir -p "$RUNNER_TEMP/rebuilt"
+          for d in "$RUNNER_TEMP"/rebuilt-artifacts/*; do
+            n=$(basename "$d"); i=${n#rebuilt-}
+            if ! [[ "$i" =~ ^[0-9]+$ ]] || [ "$i" -ge "$builds" ]; then
+              echo "::error::artifact $n was not made by a rebuild job of this workflow"; exit 1
+            fi
+          done
+          for i in $(seq 0 $((builds - 1))); do
+            d="$RUNNER_TEMP/rebuilt-artifacts/rebuilt-$i"
+            [ -d "$d" ] || { echo "::error::rebuild $i left no artifact"; exit 1; }
+            for f in "$d"/*; do
+              n=$(basename "$f")
+              [ ! -e "$RUNNER_TEMP/rebuilt/$n" ] || { echo "::error::two rebuilds made $n"; exit 1; }
+              mv "$f" "$RUNNER_TEMP/rebuilt/$n"
+            done
+          done
 
       # The analysis reads the code the way its language's tools do.
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -208,9 +230,16 @@ jobs:
         if: env.LANGUAGE == 'zig'
         with:
           version: ${{ env.ZIG }}
+      # The analysis only reads the crate graph, so it needs no toolchain of the vendor's
+      # choosing, and must not take one: rust-toolchain.toml can name a toolchain at a path
+      # in the repository, whose cargo would be the vendor's program, run in this job.
       - name: Install Rust
         if: env.LANGUAGE == 'rust'
-        run: rustup show active-toolchain || rustup toolchain install
+        run: |
+          t=stable
+          case "$RUST" in ""|rust-toolchain.toml) ;; *) t=$RUST ;; esac
+          RUSTUP_TOOLCHAIN=$t rustup toolchain install "$t" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$t" >> "$GITHUB_ENV"
 
       - name: Compare with the published release
         run: |

@@ -3,9 +3,11 @@ package checksums
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,5 +152,70 @@ func TestTarXattrs(t *testing.T) {
 	}
 	if same, why, err := SameContents(plain, old); err != nil || !same {
 		t.Errorf("TypeRegA and TypeReg should match: %q %v", why, err)
+	}
+}
+
+// TestZipConsistent: a zip whose bytes say something its central directory does not is
+// refused; ordinary zips, from Go and from zip(1), pass.
+func TestZipConsistent(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.zip")
+	zipOf(t, good, zipEntry{"tool", "the binary", 0o755}, zipEntry{"README.md", "hello", 0o644})
+	data, err := os.ReadFile(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same, why, err := SameContents(good, good); err != nil || !same {
+		t.Fatalf("a Go zip: %q %v", why, err)
+	}
+	if zipBin, err := exec.LookPath("zip"); err == nil {
+		src := t.TempDir()
+		os.WriteFile(filepath.Join(src, "tool"), []byte("the binary"), 0o755)
+		cli := filepath.Join(dir, "cli.zip")
+		cmd := exec.Command(zipBin, "-q", "-X", cli, "tool")
+		cmd.Dir = src
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatal(string(out))
+		}
+		if same, why, err := SameContents(cli, cli); err != nil || !same {
+			t.Fatalf("a zip(1) zip: %q %v", why, err)
+		}
+	}
+	renamed := bytes.Replace(bytes.Clone(data), []byte("tool"), []byte("evil"), 1) // the first is the local header's
+	for name, b := range map[string][]byte{
+		"data before the first entry":        append([]byte("MZ\x90\x00"), data...),
+		"data after the end record":          append(bytes.Clone(data), "trailing"...),
+		"a local header naming another file": renamed,
+	} {
+		p := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".zip")
+		os.WriteFile(p, b, 0o644)
+		if _, _, err := SameContents(p, good); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestTarTrailingData: entries hidden past the end-of-archive marker are refused.
+func TestTarTrailingData(t *testing.T) {
+	dir := t.TempDir()
+	clean := filepath.Join(dir, "clean.tar.gz")
+	tgz(t, clean, time.Now(), "runner", file{"tool", "bin", 0o755})
+	var raw bytes.Buffer
+	tw := tar.NewWriter(&raw)
+	tw.WriteHeader(&tar.Header{Name: "tool", Mode: 0o755, Size: 3, Typeflag: tar.TypeReg})
+	tw.Write([]byte("bin"))
+	tw.Close()
+	tw2 := tar.NewWriter(&raw) // a second archive after the first's end marker
+	tw2.WriteHeader(&tar.Header{Name: "postinstall.sh", Mode: 0o755, Size: 4, Typeflag: tar.TypeReg})
+	tw2.Write([]byte("evil"))
+	tw2.Close()
+	var gzb bytes.Buffer
+	gz := gzip.NewWriter(&gzb)
+	gz.Write(raw.Bytes())
+	gz.Close()
+	hidden := filepath.Join(dir, "hidden.tar.gz")
+	os.WriteFile(hidden, gzb.Bytes(), 0o644)
+	if _, _, err := SameContents(clean, hidden); err == nil {
+		t.Error("an archive with entries past its end marker was accepted")
 	}
 }

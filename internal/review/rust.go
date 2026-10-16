@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	cleanenv "github.com/shadybin/shadybin/internal/env"
 )
 
 // Rust is the Source for Rust projects: the crates cargo metadata says the release's
@@ -69,6 +71,7 @@ func (r Rust) Modules(ctx context.Context, src string, log io.Writer) ([]*Module
 		var out bytes.Buffer
 		cmd := exec.CommandContext(ctx, "cargo", args...)
 		cmd.Dir, cmd.Stdout, cmd.Stderr = src, &out, log
+		cmd.Env = cargoEnv()
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("cargo metadata %s: %w", target, err)
 		}
@@ -152,14 +155,17 @@ func (r Rust) add(ctx context.Context, src string, md *cargoMetadata, mods map[s
 				return err
 			}
 			name := repo + "#" + p.Name
-			m = &Module{Path: name, Version: commit, Dir: dir, Provenance: "from its repository", Files: byDir(name, files)}
+			m = &Module{Path: name, Version: commit, Dir: dir, InRepo: inside(dir, src), Provenance: "from its repository", Files: byDir(name, files)}
 		default:
 			files, err := walkCrate(dir)
 			if err != nil {
 				return err
 			}
+			// Source replacement in .cargo/config.toml can serve a crates.io crate from a
+			// directory in the repository, and cargo still names crates.io as its source.
+			// There the vendor can edit it, so it is the vendor's code, reviewed whole.
 			name := "crates.io/" + p.Name
-			m = &Module{Path: name, Version: p.Version, Dir: dir, Files: byDir(name, files)}
+			m = &Module{Path: name, Version: p.Version, Dir: dir, InRepo: inside(dir, src), Files: byDir(name, files)}
 			if p.Repository != nil {
 				m.repository = *p.Repository
 			}
@@ -319,4 +325,19 @@ func (Rust) CheckProvenance(ctx context.Context, m *Module, log io.Writer) error
 		m.Provenance = fmt.Sprintf("differs from %s: %d files", where, len(foreign))
 	}
 	return nil
+}
+
+// cargoEnv is the environment cargo metadata runs in. cargo reads the vendor's
+// .cargo/config.toml and rustup its rust-toolchain.toml, and either can name a program to
+// run (a rustc wrapper, a rustc, a toolchain at a path), so the variables that outrank them
+// pin rustc and turn wrappers off, and the toolchain is the one the caller chose, or
+// stable: reading metadata needs no particular one.
+func cargoEnv() []string {
+	env, _ := cleanenv.Clean(os.Environ())
+	toolchain := os.Getenv("RUSTUP_TOOLCHAIN")
+	if toolchain == "" {
+		toolchain = "stable"
+	}
+	return append(env, "RUSTUP_TOOLCHAIN="+toolchain, "RUSTC=rustc", "CARGO_BUILD_RUSTC=rustc",
+		"RUSTC_WRAPPER=", "CARGO_BUILD_RUSTC_WRAPPER=", "RUSTC_WORKSPACE_WRAPPER=", "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=")
 }

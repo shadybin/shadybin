@@ -91,7 +91,7 @@ func TestCertifyAndVerify(t *testing.T) {
 		Checksums: "checksums.txt",
 		Analyze:   registry.Analyze{Packages: []string{"./cmd/tool"}, Targets: []string{"linux"}},
 	})
-	projFile := filepath.Join(projDir, "project.json")
+	projFile := filepath.Join(projDir, "shadybin.json")
 	if err := os.WriteFile(projFile, proj, 0o644); err != nil {
 		t.Fatal(err)
 	}
