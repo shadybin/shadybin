@@ -472,3 +472,30 @@ func TestTooLargeSurface(t *testing.T) {
 		t.Errorf("reviewed capabilities should certify: %s %v", v, reasons)
 	}
 }
+
+// TestDecideParts: a package split into parts needs its capabilities explained once,
+// in any part, not in each.
+func TestDecideParts(t *testing.T) {
+	const pkg = "github.com/other/sdk"
+	m := testManifest(map[string][]string{pkg: {"NETWORK"}}, map[string]string{pkg: "v1.0.0"})
+	part := func(n int, explain bool) Unit {
+		u := Unit{Kind: KindThirdParty, Module: pkg, To: "v1.0.0", Scope: ScopeCapabilities, Part: n, Parts: 2, Packages: []string{pkg},
+			Result: &Result{Verdict: "pass"}}
+		if explain {
+			u.Result.Capabilities = []Explanation{{Package: pkg, Capability: "NETWORK", Explanation: "its HTTP client"}}
+		}
+		return u
+	}
+	if v, reasons := Decide(&Review{Units: []Unit{part(1, true), part(2, false)}}, m, nil); v != Certified {
+		t.Errorf("one part's explanation should do for both: %s %v", v, reasons)
+	}
+	if v, _ := Decide(&Review{Units: []Unit{part(1, false), part(2, false)}}, m, nil); v != Rejected {
+		t.Error("no part explaining the capability should reject")
+	}
+	// Another module's explanation of the same package counts for nothing.
+	other := part(1, true)
+	other.Module, other.Parts = "github.com/other/else", 1
+	if v, _ := Decide(&Review{Units: []Unit{other, part(1, false), part(2, false)}}, m, nil); v != Rejected {
+		t.Error("an explanation from another unit should not count")
+	}
+}

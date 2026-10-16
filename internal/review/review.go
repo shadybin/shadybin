@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/shadybin/shadybin/internal/manifest"
@@ -174,6 +175,24 @@ func Required(m, prev *manifest.Manifest, packages []string) []Pair {
 func Decide(r *Review, m, prev *manifest.Manifest) (string, []string) {
 	var reasons []string
 	covered := map[string]bool{}
+	// A package too large for one call is split into parts, each reviewed alone. Its
+	// capabilities belong to the whole package, so an explanation in any part counts for
+	// all of them: the part holding only generated types has nothing to explain.
+	explained := map[string]map[Pair]bool{}
+	for _, u := range r.Units {
+		if u.Result == nil {
+			continue
+		}
+		k := partsKey(u)
+		if explained[k] == nil {
+			explained[k] = map[Pair]bool{}
+		}
+		for _, e := range u.Result.Capabilities {
+			if strings.TrimSpace(e.Explanation) != "" {
+				explained[k][Pair{e.Package, e.Capability}] = true
+			}
+		}
+	}
 	for _, u := range r.Units {
 		name := u.Module + partName(u)
 		if u.Result == nil {
@@ -191,14 +210,8 @@ func Decide(r *Review, m, prev *manifest.Manifest) (string, []string) {
 				reasons = append(reasons, fmt.Sprintf("%s: %s (%s:%d)", name, f.Title, f.File, f.Line))
 			}
 		}
-		explained := map[Pair]bool{}
-		for _, e := range u.Result.Capabilities {
-			if strings.TrimSpace(e.Explanation) != "" {
-				explained[Pair{e.Package, e.Capability}] = true
-			}
-		}
 		for _, need := range Required(m, prev, u.Packages) {
-			if !explained[need] {
+			if !explained[partsKey(u)][need] {
 				reasons = append(reasons, fmt.Sprintf("%s: %s uses %s, and the review does not say why", name, need.Package, need.Capability))
 			}
 		}
@@ -219,6 +232,12 @@ func Decide(r *Review, m, prev *manifest.Manifest) (string, []string) {
 		return Rejected, reasons
 	}
 	return Certified, nil
+}
+
+// partsKey names the unit a part was split from: its parts share it, and no other unit
+// does.
+func partsKey(u Unit) string {
+	return strings.Join([]string{u.Kind, u.Module, u.From, u.To, u.Scope, strconv.Itoa(u.Parts)}, "\x00")
 }
 
 func partName(u Unit) string {
