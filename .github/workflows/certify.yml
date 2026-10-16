@@ -199,8 +199,15 @@ jobs:
         run: |
           gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$(jq -r .checksums "$PROJECT")" -D "$WORK/published"
           cat "$WORK"/published/* > "$WORK/published-checksums.txt"
+          # The published archives too: one whose bytes differ from the rebuild's still
+          # matches if it installs the same files, only its times and owners differing.
+          mkdir -p "$WORK/published-files"
+          for f in "$RUNNER_TEMP"/rebuilt/*; do
+            n=$(basename "$f")
+            case "$n" in *.tar.gz|*.tgz|*.zip) gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$n" -D "$WORK/published-files" || true ;; esac
+          done
           set +e
-          table=$("$SB" compare -published "$WORK/published-checksums.txt" "$RUNNER_TEMP/rebuilt")
+          table=$("$SB" compare -published "$WORK/published-checksums.txt" -published-files "$WORK/published-files" "$RUNNER_TEMP/rebuilt")
           code=$?
           set -e
           {
@@ -240,7 +247,7 @@ jobs:
 
       - name: Write the statement
         run: |
-          "$SB" statement -registry "$WORK/bundle" -repo "$REPO" -tag "$TAG" -published "$WORK/published-checksums.txt" \
+          "$SB" statement -registry "$WORK/bundle" -repo "$REPO" -tag "$TAG" -published "$WORK/published-checksums.txt" -published-files "$WORK/published-files" \
             -report "$WORK/report.md" -manifest "$WORK/manifest.json" -review "$WORK/review.json" "$RUNNER_TEMP/rebuilt"
           dir="$WORK/bundle/$REPO/$TAG"
           mkdir -p "$WORK/out"

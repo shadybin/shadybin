@@ -70,6 +70,7 @@ func runRebuild(ctx context.Context, args []string, stdout, stderr io.Writer) er
 func runCompare(_ context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flags("compare", "<rebuilt-dir>", stderr)
 	published := fs.String("published", "", "the vendor's published checksums file")
+	publishedFiles := fs.String("published-files", "", "the published archives, to compare by contents where their bytes differ")
 	if err := parse(fs, args, "published"); err != nil {
 		return err
 	}
@@ -85,21 +86,26 @@ func runCompare(_ context.Context, args []string, stdout, stderr io.Writer) erro
 	if err != nil {
 		return err
 	}
-	rows := compare(pub, rebuilt)
+	rows, err := compareContents(compare(pub, rebuilt), *publishedFiles, fs.Arg(0))
+	if err != nil {
+		return err
+	}
 	fmt.Fprintln(stdout, "| File | Published | Rebuilt | Result |")
 	fmt.Fprintln(stdout, "|---|---|---|---|")
 	matched, differs := 0, 0
 	for _, r := range rows {
 		fmt.Fprintf(stdout, "| `%s` | %s | %s | %s |\n", r.name, short(r.published), short(r.rebuilt), r.result)
 		switch r.result {
-		case resultMatch:
+		case resultMatch, resultContents:
 			matched++
-		case resultDiffers:
-			differs++
+		default:
+			if strings.HasPrefix(r.result, resultDiffers) {
+				differs++
+			}
 		}
 	}
 	if differs > 0 || matched == 0 {
-		fmt.Fprintf(stderr, "shadybin compare: %d identical, %d different\n", matched, differs)
+		fmt.Fprintf(stderr, "shadybin compare: %d matching, %d different\n", matched, differs)
 		return errFailed
 	}
 	return nil
@@ -114,6 +120,7 @@ func runStatement(_ context.Context, args []string, stdout, stderr io.Writer) er
 	report := fs.String("report", "", "the review's report.md")
 	manifestFile := fs.String("manifest", "", "the release's manifest.json")
 	reviewFile := fs.String("review", "", "the release's review.json, whose verdict the statement carries")
+	publishedFiles := fs.String("published-files", "", "the published archives, to compare by contents where their bytes differ")
 	if err := parse(fs, args, "registry", "repo", "tag", "published", "report", "manifest", "review"); err != nil {
 		return err
 	}
@@ -130,12 +137,18 @@ func runStatement(_ context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 	s := verify.Statement{Repo: repoFlag(*repo), Tag: *tag}
-	for _, r := range compare(pub, rebuilt) {
+	rows, err := compareContents(compare(pub, rebuilt), *publishedFiles, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if strings.HasPrefix(r.result, resultDiffers) {
+			return fmt.Errorf("%s: the rebuilt file is not the published one (%s, published %s): %s", r.name, r.rebuilt, r.published, r.result)
+		}
 		switch r.result {
-		case resultDiffers:
-			return fmt.Errorf("%s: the rebuilt file is not the published one (%s, published %s)", r.name, r.rebuilt, r.published)
-		case resultMatch:
-			s.Files = append(s.Files, verify.File{Name: r.name, Digest: r.rebuilt})
+		case resultMatch, resultContents:
+			// The digest listed is the published file's: what users download and verify.
+			s.Files = append(s.Files, verify.File{Name: r.name, Digest: r.published})
 		case resultUnpublished:
 			fmt.Fprintf(stderr, "shadybin statement: %s was rebuilt but not published; leaving it out\n", r.name)
 		case resultNotRebuilt:
@@ -559,6 +572,7 @@ func runVerify(ctx context.Context, args []string, stdout, stderr io.Writer) err
 
 const (
 	resultMatch       = "identical"
+	resultContents    = "same contents (only archive times and owners differ)"
 	resultDiffers     = "**DIFFERENT**"
 	resultNotRebuilt  = "not rebuilt"
 	resultUnpublished = "not published"
@@ -591,6 +605,40 @@ func compare(published, rebuilt map[string]verify.Digest) []row {
 	}
 	slices.SortFunc(rows, func(a, b row) int { return strings.Compare(a.name, b.name) })
 	return rows
+}
+
+// compareContents looks again at archives whose bytes differ: an archive the rebuild
+// made with the same entries, names, kinds, permissions and contents as the published one
+// matches, even if the entries' times and owners, or the gzip header, differ. Those say
+// where and when the archive was made, not what it installs. The published archive in
+// dir must be the one the checksums name.
+func compareContents(rows []row, dir, rebuiltDir string) ([]row, error) {
+	if dir == "" {
+		return rows, nil
+	}
+	for i, r := range rows {
+		if r.result != resultDiffers || !checksums.IsArchive(r.name) {
+			continue
+		}
+		pub := filepath.Join(dir, r.name)
+		d, err := checksums.File(pub)
+		if err != nil {
+			continue // not downloaded: stays different
+		}
+		if d != r.published {
+			return nil, fmt.Errorf("%s in %s is not the file the published checksums name", r.name, dir)
+		}
+		same, why, err := checksums.SameContents(pub, filepath.Join(rebuiltDir, r.name))
+		if err != nil {
+			return nil, err
+		}
+		if same {
+			rows[i].result = resultContents
+		} else {
+			rows[i].result = resultDiffers + ": " + why
+		}
+	}
+	return rows, nil
 }
 
 func short(d verify.Digest) string {

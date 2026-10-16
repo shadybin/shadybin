@@ -7,7 +7,12 @@ What shadybin certifies, how it is published, and how a verifier checks it.
 shadybin certifies a release when two things hold:
 
 1. The files shadybin built from the release's git tag are byte for byte the files the
-   vendor published.
+   vendor published, or, for an archive (`.tar.gz`, `.tgz`, `.zip`), install exactly the
+   same thing: the same entries, each with the same name, kind, permissions, link target
+   and bytes. An archive's entry times, owners and groups, entry order and gzip header
+   may differ, since they record where and when it was made, not what it holds. The
+   statement lists the published file's digest either way, so an updater checks exactly
+   what it downloaded.
 2. A model reviewed the code that goes into them and found nothing shady, by the rule in
    [Deciding](#deciding). That covers all of the vendor's own code, and third-party code
    wherever a supply-chain attack would get in (see [Review](#review)).
@@ -151,7 +156,8 @@ does not cover; it installs toolchains itself.
 
 A build is reproducible only if the vendor's release build is. Go needs `-trimpath`,
 pinned archive metadata and a pinned GoReleaser. Rust needs `--remap-path-prefix` and a
-pinned toolchain. Every language needs archives with fixed file times and owners. Zig
+pinned toolchain. Archives are compared by what they install, so their file times and
+owners need not be fixed. Zig
 and C embed absolute paths, so the toolchain must be installed where the vendor's release
 installs it. The rebuild checks out the tag at the workspace root, as the release job
 does.
