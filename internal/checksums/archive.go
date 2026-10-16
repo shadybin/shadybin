@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"slices"
@@ -17,13 +18,16 @@ import (
 // maxArchive bounds an archive read whole for comparison.
 const maxArchive = 1 << 30
 
-// entry is what an archive entry installs: its type, permissions, link target and
-// contents. Its time, owner and group, and the archive's compression header, are not:
-// they record where and when the archive was made, not what it holds.
+// entry is what an archive entry installs: its type, permissions (setuid, setgid and
+// sticky included), link target, device numbers, extended attributes and contents. Its
+// time, owner and group, and the archive's compression header, are not: they record where
+// and when the archive was made, not what it holds.
 type entry struct {
 	kind   byte
 	mode   int64
 	link   string
+	device string
+	xattrs string
 	digest [sha256.Size]byte
 }
 
@@ -50,8 +54,10 @@ func SameContents(a, b string) (bool, string, error) {
 		switch {
 		case !ok:
 			return false, name + " is only in the published archive", nil
-		case other.kind != ea[name].kind || other.link != ea[name].link:
+		case other.kind != ea[name].kind || other.link != ea[name].link || other.device != ea[name].device:
 			return false, name + " is a different kind of entry", nil
+		case other.xattrs != ea[name].xattrs:
+			return false, name + " has different extended attributes", nil
 		case other.mode != ea[name].mode:
 			return false, fmt.Sprintf("%s has mode %o, not %o", name, other.mode, ea[name].mode), nil
 		case other.digest != ea[name].digest:
@@ -98,11 +104,12 @@ func entries(path string) (map[string]entry, error) {
 			if err != nil {
 				return nil, err
 			}
-			e := entry{kind: 'f', mode: int64(f.Mode().Perm())}
-			if f.FileInfo().IsDir() {
-				e.kind = 'd'
-			}
+			e := entry{kind: zipKind(f.Mode()), mode: unixMode(f.Mode())}
 			copy(e.digest[:], h.Sum(nil))
+			if e.kind == 'l' {
+				// A zip stores a symlink's target as its contents.
+				e.link = fmt.Sprintf("sha256:%x", e.digest)
+			}
 			if err := add(f.Name, e); err != nil {
 				return nil, err
 			}
@@ -126,11 +133,61 @@ func entries(path string) (map[string]entry, error) {
 		if _, err := io.Copy(h, io.LimitReader(tr, maxArchive)); err != nil {
 			return nil, err
 		}
-		e := entry{kind: hdr.Typeflag, mode: hdr.Mode & 0o7777, link: hdr.Linkname}
+		kind := hdr.Typeflag
+		if kind == tar.TypeRegA { // the old name for a regular file
+			kind = tar.TypeReg
+		}
+		e := entry{kind: kind, mode: hdr.Mode & 0o7777, link: hdr.Linkname, xattrs: xattrs(hdr)}
+		if kind == tar.TypeChar || kind == tar.TypeBlock {
+			e.device = fmt.Sprintf("%d,%d", hdr.Devmajor, hdr.Devminor)
+		}
 		copy(e.digest[:], h.Sum(nil))
 		if err := add(hdr.Name, e); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// zipKind is a zip entry's type, from the Unix mode its external attributes carry: a
+// symlink whose target is its contents must not pass for a file holding the same bytes.
+func zipKind(m fs.FileMode) byte {
+	switch {
+	case m.IsDir():
+		return 'd'
+	case m&fs.ModeSymlink != 0:
+		return 'l'
+	case m.IsRegular():
+		return 'f'
+	}
+	return 'o'
+}
+
+// unixMode is a zip entry's permissions with the setuid, setgid and sticky bits, as a tar
+// header has them.
+func unixMode(m fs.FileMode) int64 {
+	mode := int64(m.Perm())
+	if m&fs.ModeSetuid != 0 {
+		mode |= 0o4000
+	}
+	if m&fs.ModeSetgid != 0 {
+		mode |= 0o2000
+	}
+	if m&fs.ModeSticky != 0 {
+		mode |= 0o1000
+	}
+	return mode
+}
+
+// xattrs are a tar entry's extended attributes, which install with the file (a
+// capability such as cap_setuid is one), sorted into one string to compare.
+func xattrs(hdr *tar.Header) string {
+	var out []string
+	for k, v := range hdr.PAXRecords {
+		if strings.HasPrefix(k, "SCHILY.xattr.") || strings.HasPrefix(k, "LIBARCHIVE.xattr.") {
+			out = append(out, k+"="+v)
+		}
+	}
+	slices.Sort(out)
+	return strings.Join(out, "\x00")
 }

@@ -278,7 +278,9 @@ func runSign(_ context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	var prev *manifest.Manifest
 	if rv.Previous != "" {
-		if err := certifiedIn(*root, s.Repo, rv.Previous); err != nil {
+		// Signed by shadybin's pinned keys or by this key, which may be newer than them.
+		trusted := append(verify.DefaultKeys(), k.Public().(ed25519.PublicKey))
+		if err := certifiedIn(*root, s.Repo, rv.Previous, trusted); err != nil {
 			return fmt.Errorf("the review is against %s: %w", rv.Previous, err)
 		}
 		prevDir, _ := registry.ReleaseDir(*root, s.Repo, rv.Previous)
@@ -473,9 +475,10 @@ func runReview(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	return nil
 }
 
-// certifiedIn checks the registry at root holds a signed, certified statement for the tag.
-// The registry's main branch is shadybin's own record, so a signature there is its own.
-func certifiedIn(root, repo, tag string) error {
+// certifiedIn checks the registry at root holds a certified statement for the tag, signed
+// by one of keys. The registry's main branch is shadybin's own record, but a signature is
+// checked rather than assumed: a statement committed there without one never counts.
+func certifiedIn(root, repo, tag string, keys []ed25519.PublicKey) error {
 	dir, err := registry.ReleaseDir(root, repo, tag)
 	if err != nil {
 		return err
@@ -484,12 +487,16 @@ func certifiedIn(root, repo, tag string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(dir, verify.SignatureName)); err != nil {
+	sig, err := os.ReadFile(filepath.Join(dir, verify.SignatureName))
+	if err != nil {
 		return errors.New("not signed")
 	}
-	s, err := verify.ParseStatement(data)
+	s, err := verify.Open(data, sig, keys)
 	if err != nil {
 		return err
+	}
+	if s.Repo != repo || s.Tag != tag {
+		return fmt.Errorf("its statement is for %s %s", s.Repo, s.Tag)
 	}
 	if s.Verdict != verify.Certified {
 		return errors.New("it was not certified")

@@ -2,7 +2,9 @@ package checksums
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,5 +64,91 @@ func TestSameContents(t *testing.T) {
 		if same, why, err := SameContents(published, p); err != nil || same || why == "" {
 			t.Errorf("%s: same=%v why=%q err=%v", name, same, why, err)
 		}
+	}
+}
+
+func zipOf(t *testing.T, path string, entries ...zipEntry) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	for _, e := range entries {
+		h := &zip.FileHeader{Name: e.name, Method: zip.Deflate}
+		h.SetMode(e.mode)
+		w, err := zw.CreateHeader(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(e.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type zipEntry struct {
+	name, body string
+	mode       fs.FileMode
+}
+
+// TestZipKinds: a symlink in a zip, whose target is its contents, is not a file holding
+// the same bytes, and setuid is a difference.
+func TestZipKinds(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "link.zip")
+	zipOf(t, link, zipEntry{"tool", "/usr/bin/evil", fs.ModeSymlink | 0o777})
+	file := filepath.Join(dir, "file.zip")
+	zipOf(t, file, zipEntry{"tool", "/usr/bin/evil", 0o777})
+	if same, _, err := SameContents(link, file); err != nil || same {
+		t.Errorf("a symlink matched a file: same=%v err=%v", same, err)
+	}
+	setuid := filepath.Join(dir, "setuid.zip")
+	zipOf(t, setuid, zipEntry{"tool", "bin", fs.ModeSetuid | 0o755})
+	plain := filepath.Join(dir, "plain.zip")
+	zipOf(t, plain, zipEntry{"tool", "bin", 0o755})
+	if same, _, err := SameContents(setuid, plain); err != nil || same {
+		t.Errorf("a setuid file matched a plain one: same=%v err=%v", same, err)
+	}
+	again := filepath.Join(dir, "again.zip")
+	zipOf(t, again, zipEntry{"tool", "/usr/bin/evil", fs.ModeSymlink | 0o777})
+	if same, why, err := SameContents(link, again); err != nil || !same {
+		t.Errorf("the same symlink should match: %q %v", why, err)
+	}
+}
+
+// TestTarXattrs: extended attributes install with a file, so they must match; the old
+// regular-file type flag is the same as the new.
+func TestTarXattrs(t *testing.T) {
+	write := func(path string, flag byte, pax map[string]string) {
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		gz := gzip.NewWriter(f)
+		tw := tar.NewWriter(gz)
+		h := &tar.Header{Name: "tool", Mode: 0o755, Size: 3, Typeflag: flag, PAXRecords: pax, Format: tar.FormatPAX}
+		if err := tw.WriteHeader(h); err != nil {
+			t.Fatal(err)
+		}
+		tw.Write([]byte("bin"))
+		tw.Close()
+		gz.Close()
+	}
+	dir := t.TempDir()
+	plain, capped, old := filepath.Join(dir, "plain.tar.gz"), filepath.Join(dir, "capped.tar.gz"), filepath.Join(dir, "old.tar.gz")
+	write(plain, tar.TypeReg, nil)
+	write(capped, tar.TypeReg, map[string]string{"SCHILY.xattr.security.capability": "cap_setuid+ep"})
+	write(old, tar.TypeRegA, nil)
+	if same, _, err := SameContents(plain, capped); err != nil || same {
+		t.Errorf("a file with a capability xattr matched one without: same=%v err=%v", same, err)
+	}
+	if same, why, err := SameContents(plain, old); err != nil || !same {
+		t.Errorf("TypeRegA and TypeReg should match: %q %v", why, err)
 	}
 }

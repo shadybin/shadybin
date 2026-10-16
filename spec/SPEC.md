@@ -138,7 +138,8 @@ checked.
   `toolchain` to install (`go`: a version or `go.mod`; `zig`: a version; `rust`: a
   version or `rust-toolchain.toml`), the shell commands to `run` in the checked-out tag,
   and the `artifacts` they make. The build sees `SOURCE_DATE_EPOCH`, the tag's commit
-  time, and `TAG`.
+  time, and `TAG`, and none of the caller's credentials: variables that look like keys,
+  tokens or passwords, and the Actions runtime's own, are left out.
 - `checksums`: the release asset with the published digests in sha256sum's format, or a
   pattern for one file per asset, such as `*.sha256`.
 - `analyze`: for Go, the main `packages` and the GOOS `targets`; for Rust, the binary
