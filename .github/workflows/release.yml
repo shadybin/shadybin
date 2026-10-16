@@ -1,0 +1,45 @@
+# A v1.2.3 tag publishes shadybin's CLI and certifies it with shadybin, like any vendor's
+# release: make dist builds the binaries, the registry's project.json for shadybin rebuilds
+# them the same way, and certify reviews the code on shadybin's own Claude API key.
+#
+# Afterwards, by hand (only org admins can move v* tags): move v1 to the tag, and add the
+# tag's commit to the registry's .github/certify-commits, without which intake will not
+# accept this or any vendor's run of this certify.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: make dist
+      - run: gh release create "$TAG" dist/* --verify-tag --title "shadybin $TAG" --generate-notes -R "$GITHUB_REPOSITORY"
+
+  certify:
+    needs: publish
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/certify.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

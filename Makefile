@@ -1,7 +1,20 @@
-.PHONY: build check format test vectors sdk-test
+.PHONY: build check dist format test vectors sdk-test
 
 build:
 	go build -o bin/shadybin ./cmd/shadybin
+
+# The release's binaries, which the release workflow publishes and certify rebuilds from
+# the tag, so they must come out byte for byte the same on any machine: pure Go, no paths,
+# no build IDs, no VCS stamp. TAG names the version.
+dist:
+	@test -n "$(TAG)" || { echo "make dist needs TAG"; exit 1; }
+	rm -rf dist && mkdir dist
+	for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do \
+		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build -trimpath -buildvcs=false \
+			-ldflags "-s -w -buildid= -X github.com/shadybin/shadybin/internal/cli.Version=$(TAG)" \
+			-o dist/shadybin-$${p%/*}-$${p#*/} ./cmd/shadybin || exit 1; \
+	done
+	cd dist && shasum -a 256 shadybin-* > checksums.txt
 
 test:
 	go test ./...

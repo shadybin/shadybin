@@ -1,5 +1,7 @@
 # shadybin
 
+[![shadybin](https://img.shields.io/endpoint?url=https://shadybin.dev/registry/github.com/shadybin/shadybin/badge.json)](https://shadybin.dev/registry/github.com/shadybin/shadybin/)
+
 shadybin certifies that a released binary has no shady code in it.
 
 It rebuilds the release from its tag, on the same kinds of runners the vendor's release
@@ -47,6 +49,19 @@ Anyone can check a file:
 ```sh
 shadybin verify -key <hex> -repo github.com/acme/tool -tag v1.2.0 tool_Linux_x86_64.tar.gz
 ```
+
+The CLI is on the [releases page](https://github.com/shadybin/shadybin/releases/latest),
+for Linux and macOS on x86 and ARM:
+
+```sh
+curl -fsSLo shadybin https://github.com/shadybin/shadybin/releases/latest/download/shadybin-linux-amd64
+chmod +x shadybin
+```
+
+Each release is certified by shadybin itself, which is the badge above. That shows the
+binaries are exactly what this source builds, and the review is public. It cannot show
+that shadybin is honest: a shadybin that lied could pass itself. That rests on the
+source being open, the builds reproducible, and the report readable by anyone.
 
 See [spec/SPEC.md](spec/SPEC.md) for the formats and the flow.
 

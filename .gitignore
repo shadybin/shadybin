@@ -1,4 +1,5 @@
 bin/
+dist/
 sdk/rust/target/
 sdk/rust/Cargo.lock
 sdk/zig/.zig-cache/

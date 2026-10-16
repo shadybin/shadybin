@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// Version is the release, set by make dist; "dev" for any other build.
+var Version = "dev"
+
 type command struct {
 	name    string
 	summary string
@@ -28,6 +31,7 @@ var commands = []command{
 	{"badge", "point a project's badge at its latest release", runBadge},
 	{"pages", "write the registry's HTML pages", runPages},
 	{"verify", "check files against the registry", runVerify},
+	{"version", "print shadybin's version", runVersion},
 }
 
 // errUsage means the arguments were wrong; the flag package has already said how.
@@ -101,3 +105,11 @@ func parse(fs *flag.FlagSet, args []string, required ...string) error {
 // repoFlag lowercases a repository given on the command line; the registry and statements
 // hold it lowercase.
 func repoFlag(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+func runVersion(_ context.Context, args []string, stdout, stderr io.Writer) error {
+	if err := parse(flags("version", "", stderr), args); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "shadybin", Version)
+	return nil
+}
