@@ -49,17 +49,40 @@ func (z Zig) Modules(ctx context.Context, src string, log io.Writer) ([]*Module,
 		return nil, err
 	}
 	seen := map[string]bool{}
-	var walk func(zon map[string]any, dir string) error
-	walk = func(zon map[string]any, dir string) error {
+	seenPath := map[string]bool{}
+	// walk reads the dependencies of the build.zig.zon in dir, which belongs to the package
+	// in pkg: the repository, or a fetched package.
+	var walk func(zon map[string]any, dir, pkg string) error
+	walk = func(zon map[string]any, dir, pkg string) error {
 		deps, _ := zon["dependencies"].(map[string]any)
 		for _, name := range slices.Sorted(mapKeys(deps)) {
 			dep, _ := deps[name].(map[string]any)
 			if p, ok := dep["path"].(string); ok {
-				// A path dependency is code beside the project's: in the repository, it is the
-				// vendor's, and git's list of the project's files already has it if .paths does.
+				// A path dependency is code beside its package's own: in the repository it is
+				// the vendor's, and git's list of the project's files already has it if .paths
+				// does; in a fetched package it was fetched and hashed with the package. Its own
+				// dependencies are the build's too.
 				local := filepath.Join(dir, filepath.FromSlash(p))
-				if !inside(local, src) {
-					return fmt.Errorf("zig dependency %s: path %s is outside the repository", name, p)
+				if !inside(local, pkg) {
+					where := "its package"
+					if pkg == src {
+						where = "the repository"
+					}
+					return fmt.Errorf("zig dependency %s: path %s is outside %s", name, p, where)
+				}
+				if seenPath[local] {
+					continue
+				}
+				seenPath[local] = true
+				if _, err := os.Stat(filepath.Join(local, "build.zig.zon")); err != nil {
+					continue
+				}
+				sub, err := readZon(filepath.Join(local, "build.zig.zon"))
+				if err != nil {
+					return fmt.Errorf("zig dependency %s: %w", name, err)
+				}
+				if err := walk(sub, local, pkg); err != nil {
+					return err
 				}
 				continue
 			}
@@ -84,13 +107,13 @@ func (z Zig) Modules(ctx context.Context, src string, log io.Writer) ([]*Module,
 			// edit it there: it is the vendor's code, reviewed whole and never cached.
 			m.InRepo = inside(pkgDir, src)
 			mods = append(mods, m)
-			if err := walk(sub, pkgDir); err != nil {
+			if err := walk(sub, pkgDir, pkgDir); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if err := walk(root, src); err != nil {
+	if err := walk(root, src, src); err != nil {
 		return nil, err
 	}
 	return mods, nil
@@ -226,13 +249,19 @@ func (z Zig) Excludes() []string {
 	return out
 }
 
-// zigFetcher fetches packages by URL with `zig fetch`, in a directory of shadybin's own
-// with an empty build.zig, so no build.zig of the vendor's or of a dependency's runs, and
-// checks each against the hash build.zig.zon pins. A package the repository carries in its
-// own zig-pkg is used from there, as the build would.
+// zigFetcher fetches packages by URL, in a directory of shadybin's own with an empty
+// build.zig, so no build.zig of the vendor's or of a dependency's runs, and checks each
+// against the hash build.zig.zon pins. A package the repository carries in its own zig-pkg
+// is used from there, as the build would.
+//
+// Zig 0.17's `zig fetch` keeps only a compressed copy in the global cache; the unpacked
+// tree a build uses appears in zig-pkg only when a build's dependency tree is fetched. So
+// shadybin's own build.zig.zon names the package and `zig build --fetch`, which exits
+// before any build.zig is compiled, fetches it, checks its hash and unpacks it. It uses a
+// global cache of its own: a package `zig fetch` stored is read back with another hash.
 type zigFetcher struct {
 	repoPkgs string // the repository's zig-pkg
-	work     string // shadybin's own directory for zig fetch
+	work     string // shadybin's own directory to fetch in
 }
 
 func newZigFetcher(src string) (*zigFetcher, error) {
@@ -259,20 +288,52 @@ func (f *zigFetcher) get(ctx context.Context, url, hash string, log io.Writer) (
 	if isDir(dir) {
 		return dir, nil
 	}
-	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, "zig", "fetch", url)
-	cmd.Dir, cmd.Stdout, cmd.Stderr = f.work, &out, log
-	cmd.Env, _ = cleanenv.Clean(os.Environ())
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("zig fetch %s: %w", url, err)
-	}
-	if got := strings.TrimSpace(out.String()); got != hash {
-		return "", fmt.Errorf("%s fetched as %s, but build.zig.zon pins %s", url, got, hash)
+	if err := f.fetch(ctx, url, hash, log); err != nil {
+		return "", err
 	}
 	if !isDir(dir) {
-		return "", fmt.Errorf("zig fetch %s left nothing in %s", url, dir)
+		return "", fmt.Errorf("zig build --fetch %s left nothing in %s", url, dir)
 	}
 	return dir, nil
+}
+
+// fetchZon is shadybin's own build.zig.zon in the fetch directory, naming one package.
+// The fingerprint is the one Zig requires for the name shadybin_fetch.
+const fetchZon = `.{
+    .name = .shadybin_fetch,
+    .version = "0.0.0",
+    .fingerprint = 0x95488693096f1dc4,
+    .dependencies = .{
+        .pkg = .{ .url = "%s", .hash = "%s" },
+    },
+    .paths = .{""},
+}
+`
+
+// fetch has Zig fetch the package url names into the fetch directory's zig-pkg, as a
+// build would, checked against hash. The url comes from the vendor's build.zig.zon, so
+// anything that could end its string in shadybin's is refused rather than escaped.
+func (f *zigFetcher) fetch(ctx context.Context, url, hash string, log io.Writer) error {
+	if strings.ContainsFunc(url+hash, func(r rune) bool { return r == '"' || r == '\\' || r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("%q cannot be named in a build.zig.zon", url)
+	}
+	zon := fmt.Sprintf(fetchZon, url, hash)
+	if err := os.WriteFile(filepath.Join(f.work, "build.zig.zon"), []byte(zon), 0o644); err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "zig", "build", "--fetch")
+	cmd.Dir, cmd.Stdout, cmd.Stderr = f.work, log, io.MultiWriter(log, &stderr)
+	env, _ := cleanenv.Clean(os.Environ())
+	cmd.Env = append(env, "ZIG_GLOBAL_CACHE_DIR="+filepath.Join(f.work, "cache"))
+	if err := cmd.Run(); err != nil {
+		if _, got, ok := strings.Cut(stderr.String(), "but the fetched package has "); ok {
+			got, _, _ = strings.Cut(got, "\n")
+			return fmt.Errorf("%s fetched as %s, but build.zig.zon pins %s", url, strings.TrimSpace(got), hash)
+		}
+		return fmt.Errorf("zig build --fetch %s: %w", url, err)
+	}
+	return nil
 }
 
 // validZigHash keeps a hash from naming a path outside the package directory.

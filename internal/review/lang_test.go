@@ -134,7 +134,7 @@ func TestZigFetchRunsNoBuildZig(t *testing.T) {
 
 	project := func(hash string) string {
 		src := t.TempDir()
-		write(t, filepath.Join(src, "build.zig.zon"), ".{ .name = .app, .version = \"0.1.0\", .fingerprint = 0xc96e70cf8ec39555, .dependencies = .{ .dep = .{ .url = \""+tarball+"\", .hash = \""+hash+"\", .lazy = true } }, .paths = .{ \"build.zig\", \"build.zig.zon\", \"src\" } }\n")
+		write(t, filepath.Join(src, "build.zig.zon"), ".{ .name = .app, .version = \"0.1.0\", .fingerprint = 0xc96e70cf8ec39555, .dependencies = .{ .dep = .{ .url = \"file://"+tarball+"\", .hash = \""+hash+"\", .lazy = true } }, .paths = .{ \"build.zig\", \"build.zig.zon\", \"src\" } }\n")
 		write(t, filepath.Join(src, "build.zig"), "const std = @import(\"std\");\npub fn build(b: *std.Build) void {\n    _ = b;\n    std.fs.cwd().writeFile(.{ .sub_path = \"RAN\", .data = \"build.zig ran\" }) catch {};\n}\n")
 		write(t, filepath.Join(src, "src/main.zig"), "pub fn main() void {}\n")
 		gitT(t, src, "init", "-q", "-b", "main")
@@ -167,6 +167,83 @@ func TestZigFetchRunsNoBuildZig(t *testing.T) {
 	}
 	if len(mods) != 2 || !mods[1].InRepo {
 		t.Fatalf("a package in the repository's zig-pkg should be the vendor's: %+v", mods[1])
+	}
+}
+
+// TestZigWalksPathDependenciesOfFetchedPackages: a path dependency inside a fetched
+// package is part of that package, and the url dependencies its build.zig.zon names, lazy
+// ones too, are the build's, so they are fetched and reviewed. (Lazy here also because Zig
+// resolves a nested file:// url against the package's directory.)
+func TestZigWalksPathDependenciesOfFetchedPackages(t *testing.T) {
+	if _, err := exec.LookPath("zig"); err != nil {
+		t.Skip("zig is not installed")
+	}
+	tmp := t.TempDir()
+	// Zig 0.16's zig fetch wants a build.zig where it runs.
+	write(t, filepath.Join(tmp, "build.zig"), "pub fn build(b: *@import(\"std\").Build) void {\n    _ = b;\n}\n")
+	pack := func(name, dir string) (string, string) {
+		tarball := filepath.Join(tmp, name+".tar.gz")
+		if out, err := exec.Command("tar", "-czf", tarball, "-C", dir, ".").CombinedOutput(); err != nil {
+			t.Fatal(string(out))
+		}
+		cmd := exec.Command("zig", "fetch", tarball)
+		cmd.Dir = tmp
+		out, err := cmd.Output()
+		if err != nil {
+			t.Skip("zig fetch: ", err)
+		}
+		return "file://" + tarball, strings.TrimSpace(string(out))
+	}
+	leaf := filepath.Join(tmp, "leaf")
+	write(t, filepath.Join(leaf, "build.zig.zon"), ".{ .name = .leaf, .version = \"0.1.0\", .fingerprint = 0xc69f00e717dc8a32, .paths = .{ \"build.zig.zon\", \"src\" } }\n")
+	write(t, filepath.Join(leaf, "src/leaf.zig"), "pub fn g() void {}\n")
+	leafURL, leafHash := pack("leaf", leaf)
+
+	dep := filepath.Join(tmp, "dep")
+	write(t, filepath.Join(dep, "build.zig.zon"), ".{ .name = .dep, .version = \"0.1.0\", .fingerprint = 0xf81054301534d274, .dependencies = .{ .sub = .{ .path = \"sub\" } }, .paths = .{ \"build.zig.zon\", \"src\", \"sub\" } }\n")
+	write(t, filepath.Join(dep, "src/dep.zig"), "pub fn f() void {}\n")
+	write(t, filepath.Join(dep, "sub/build.zig.zon"), ".{ .name = .sub, .version = \"0.1.0\", .fingerprint = 0x580282dcfa3b54ae, .dependencies = .{ .leaf = .{ .url = \""+leafURL+"\", .hash = \""+leafHash+"\", .lazy = true } }, .paths = .{ \"build.zig.zon\" } }\n")
+	depURL, depHash := pack("dep", dep)
+
+	src := t.TempDir()
+	write(t, filepath.Join(src, "build.zig.zon"), ".{ .name = .app, .version = \"0.1.0\", .fingerprint = 0xc96e70cf8ec39555, .dependencies = .{ .dep = .{ .url = \""+depURL+"\", .hash = \""+depHash+"\" } }, .paths = .{ \"build.zig\", \"build.zig.zon\", \"src\" } }\n")
+	write(t, filepath.Join(src, "build.zig"), "pub fn build(b: *@import(\"std\").Build) void {\n    _ = b;\n}\n")
+	write(t, filepath.Join(src, "src/main.zig"), "pub fn main() void {}\n")
+	gitT(t, src, "init", "-q", "-b", "main")
+	gitT(t, src, "add", ".")
+	gitT(t, src, "commit", "-q", "-m", "v1")
+
+	mods, err := Zig{Repo: "github.com/acme/app"}.Modules(context.Background(), src, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions []string
+	for _, m := range mods[1:] {
+		versions = append(versions, m.Version)
+	}
+	if !slices.Contains(versions, depHash) || !slices.Contains(versions, leafHash) {
+		t.Fatalf("want the package and the url dependency of its path dependency, got %v", versions)
+	}
+}
+
+// TestZigFetchRefusesZonInjection: the url is the vendor's, and only a url that cannot end
+// its string is ever written into shadybin's own build.zig.zon.
+func TestZigFetchRefusesZonInjection(t *testing.T) {
+	f, err := newZigFetcher(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []string{
+		`https://example.com/a.tar.gz", .lazy = true }, .evil = .{ .url = "x`,
+		`https://example.com/a\".tar.gz`,
+		"https://example.com/a.tar.gz\n.paths = .{}",
+	} {
+		if err := f.fetch(context.Background(), u, "dep-0.1.0-AAAA", io.Discard); err == nil || !strings.Contains(err.Error(), "cannot be named") {
+			t.Errorf("%q: %v", u, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.work, "build.zig.zon")); err == nil {
+		t.Error("a refused url still wrote build.zig.zon")
 	}
 }
 
