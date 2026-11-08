@@ -48,6 +48,8 @@ env:
 
 jobs:
   plan:
+    # The tag in the name lets the registry's intake find the run certifying a release.
+    name: plan ${{ inputs.tag }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/shadybin/shadybin/verify"
@@ -195,7 +197,83 @@ const (
 	// NotCertified is a release with no statement after PendingFor: never certified, or
 	// its certification failed.
 	NotCertified = "not certified"
+	// Certifying is a release with no statement whose certify run is still going.
+	Certifying = "certifying"
+	// CertifyFailed is a release with no statement whose newest certify run ended
+	// without success.
+	CertifyFailed = "certify failed"
 )
+
+// unsigned says whether a state is one of a release with no signed statement.
+func unsigned(state string) bool {
+	return state == Pending || state == NotCertified || state == Certifying || state == CertifyFailed
+}
+
+// RunName is the file holding the newest certify run intake found for a release that has
+// no statement yet, so its page can link to the run working on it.
+const RunName = "run.json"
+
+// Run is a certify run of a vendor's, as GitHub reported it.
+type Run struct {
+	URL        string `json:"url"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion,omitempty"`
+}
+
+// The run statuses and conclusions GitHub's API uses; anything else is refused.
+var (
+	runStatuses    = []string{"queued", "in_progress", "completed", "waiting", "requested", "pending"}
+	runConclusions = []string{"", "success", "failure", "cancelled", "timed_out", "action_required", "neutral", "skipped", "stale", "startup_failure"}
+)
+
+// NewRun is run id of repo (host/owner/name, on github.com). Its link is built here from
+// the id, never taken as given, and a status or conclusion GitHub does not use is refused.
+func NewRun(repo string, id uint64, status, conclusion string) (Run, error) {
+	path, ok := strings.CutPrefix(repo, "github.com/")
+	if !ok || strings.Count(path, "/") != 1 {
+		return Run{}, fmt.Errorf("%s is not a repository on github.com", repo)
+	}
+	if id == 0 {
+		return Run{}, errors.New("no run id")
+	}
+	if !slices.Contains(runStatuses, status) {
+		return Run{}, fmt.Errorf("run status %q is not one GitHub uses", status)
+	}
+	if !slices.Contains(runConclusions, conclusion) {
+		return Run{}, fmt.Errorf("run conclusion %q is not one GitHub uses", conclusion)
+	}
+	return Run{URL: fmt.Sprintf("https://github.com/%s/actions/runs/%d", path, id), Status: status, Conclusion: conclusion}, nil
+}
+
+// WriteRun records a release's newest certify run.
+func WriteRun(root, repo, tag string, run Run) error {
+	release, err := ReleaseDir(root, repo, tag)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(release, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(release, RunName), append(data, '\n'), 0o644)
+}
+
+// LoadRun reads the run recorded in a release directory, if there is a valid one.
+func LoadRun(release string) (Run, bool) {
+	data, err := os.ReadFile(filepath.Join(release, RunName))
+	if err != nil {
+		return Run{}, false
+	}
+	var run Run
+	if json.Unmarshal(data, &run) != nil || !strings.HasPrefix(run.URL, "https://github.com/") ||
+		!slices.Contains(runStatuses, run.Status) || !slices.Contains(runConclusions, run.Conclusion) {
+		return Run{}, false
+	}
+	return run, true
+}
 
 // WriteBadges points the project's badge at its latest release, the one users are
 // getting, whatever shadybin has made of it: its verdict once signed, pending at first,
@@ -215,7 +293,7 @@ func WriteBadges(root, repo, tag string, published, now time.Time) error {
 	if err := writeBadge(filepath.Join(dir, BadgeName), b); err != nil {
 		return err
 	}
-	if state == Pending || state == NotCertified {
+	if unsigned(state) {
 		if err := os.MkdirAll(release, 0o755); err != nil {
 			return err
 		}
@@ -225,7 +303,8 @@ func WriteBadges(root, repo, tag string, published, now time.Time) error {
 }
 
 // State is a release's standing: its verdict when the registry holds its signed
-// statement, otherwise Pending or NotCertified, by how long ago it was published.
+// statement; otherwise what its newest certify run is doing, when intake found one that
+// has not succeeded; otherwise Pending or NotCertified, by how long ago it was published.
 func State(root, repo, tag string, published, now time.Time) string {
 	if release, err := ReleaseDir(root, repo, tag); err == nil {
 		data, err := os.ReadFile(filepath.Join(release, verify.StatementName))
@@ -233,6 +312,14 @@ func State(root, repo, tag string, published, now time.Time) string {
 		if err == nil && sigErr == nil {
 			if s, err := verify.ParseStatement(data); err == nil {
 				return s.Verdict
+			}
+		}
+		if run, ok := LoadRun(release); ok {
+			switch {
+			case run.Status != "completed":
+				return Certifying
+			case run.Conclusion != "success":
+				return CertifyFailed
 			}
 		}
 	}
@@ -251,6 +338,10 @@ func badgeFor(tag, state string) Badge {
 		b.Message, b.Color = tag+" shady", "red"
 	case Pending:
 		b.Message, b.Color = tag+" pending", "lightgrey"
+	case Certifying:
+		b.Message, b.Color = tag+" certifying", "blue"
+	case CertifyFailed:
+		b.Message, b.Color = tag+" certify failed", "orange"
 	default:
 		b.Message, b.Color = tag+" not certified", "orange"
 	}

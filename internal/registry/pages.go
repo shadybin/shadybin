@@ -30,6 +30,7 @@ type release struct {
 	Signed  bool
 	Message string // the badge's text
 	Color   string
+	RunURL  string // the certify run working on it, while it has no statement
 }
 
 type project struct {
@@ -82,6 +83,11 @@ func WritePages(root string) error {
 			r.Message, r.Color = b.Message, b.Color
 			if r.Message == "" {
 				r.Message = e.Name() + " " + r.State
+			}
+			if !r.Signed {
+				if run, ok := LoadRun(filepath.Join(dir, e.Name())); ok {
+					r.RunURL = run.URL
+				}
 			}
 			p.Releases = append(p.Releases, r)
 		}
@@ -161,6 +167,7 @@ th { border-top: 0; color: var(--muted); font-weight: 600; font-size: 0.85rem; b
 .pill { display: inline-block; font: 600 0.8rem/1 var(--mono); padding: 0.35rem 0.55rem; border-radius: 6px; white-space: nowrap; }
 .green { background: #dcfce7; color: #14532d; } .red { background: #fee2e2; color: #991b1b; }
 .grey { background: #ececeb; color: #4b4b48; } .orange { background: #ffedd5; color: #9a3412; }
+.blue { background: #dbeafe; color: #1e3a8a; }
 .files a { margin-right: 0.8rem; white-space: nowrap; }
 .muted { color: var(--muted); }
 footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; color: var(--muted); font-size: 0.9rem; }
@@ -175,6 +182,8 @@ var funcs = template.FuncMap{
 			return "red"
 		case "orange":
 			return "orange"
+		case "blue":
+			return "blue"
 		}
 		return "grey"
 	},
@@ -203,7 +212,7 @@ var projectPage = template.Must(template.New("project").Funcs(funcs).Parse(pageH
 <tr><th>Release</th><th>Verdict</th><th>Files</th></tr>
 {{range .Releases}}<tr>
 <td class="tag">{{.Tag}}</td>
-<td><span class="pill {{pill .Color}}">{{.Message}}</span></td>
+<td>{{if .RunURL}}<a href="{{.RunURL}}" title="its certify run">{{end}}<span class="pill {{pill .Color}}">{{.Message}}</span>{{if .RunURL}}</a>{{end}}</td>
 <td class="files">{{if .Signed}}<a href="{{repoURL}}/{{$.Repo}}/{{.Tag}}/report.md">report</a><a href="{{siteURL}}/{{$.Repo}}/{{.Tag}}/statement.txt">statement</a><a href="{{siteURL}}/{{$.Repo}}/{{.Tag}}/statement.txt.sig">signature</a><a href="{{siteURL}}/{{$.Repo}}/{{.Tag}}/manifest.json">manifest</a><a href="{{siteURL}}/{{$.Repo}}/{{.Tag}}/review.json">review</a>{{else}}<span class="muted">no statement</span>{{end}}</td>
 </tr>{{end}}
 </table>{{else}}<p class="muted">No releases yet.</p>{{end}}

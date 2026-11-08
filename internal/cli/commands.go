@@ -510,12 +510,24 @@ func runBadge(_ context.Context, args []string, stdout, stderr io.Writer) error 
 	repo := fs.String("repo", "", "the source repository, host/owner/name")
 	tag := fs.String("tag", "", "the project's latest release")
 	published := fs.String("published", "", "when it was published, RFC 3339")
+	runID := fs.Uint64("run", 0, "the newest certify run for the release, if it has no statement yet")
+	runStatus := fs.String("run-status", "", "that run's status, as GitHub reports it")
+	runConclusion := fs.String("run-conclusion", "", "that run's conclusion, as GitHub reports it")
 	if err := parse(fs, args, "registry", "repo", "tag", "published"); err != nil {
 		return err
 	}
 	at, err := time.Parse(time.RFC3339, *published)
 	if err != nil {
 		return fmt.Errorf("-published: %w", err)
+	}
+	if *runID != 0 {
+		run, err := registry.NewRun(repoFlag(*repo), *runID, *runStatus, *runConclusion)
+		if err != nil {
+			return fmt.Errorf("-run: %w", err)
+		}
+		if err := registry.WriteRun(*root, repoFlag(*repo), *tag, run); err != nil {
+			return err
+		}
 	}
 	if err := registry.WriteBadges(*root, repoFlag(*repo), *tag, at, time.Now()); err != nil {
 		return err
