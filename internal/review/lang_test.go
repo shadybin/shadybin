@@ -277,3 +277,24 @@ func TestCargoRunsNoVendorProgram(t *testing.T) {
 		t.Fatal("cargo metadata ran the vendor's program")
 	}
 }
+
+// TestWalkCrateLeavesNothingOutByName: Cargo.toml can give a library any path, such as
+// tests/hidden.rs, so a directory's name says nothing about whether cargo compiles it.
+func TestWalkCrateLeavesNothingOutByName(t *testing.T) {
+	crate := t.TempDir()
+	write(t, filepath.Join(crate, "Cargo.toml"), "[package]\nname = \"x\"\n[lib]\npath = \"tests/hidden.rs\"\n")
+	write(t, filepath.Join(crate, "tests/hidden.rs"), "pub fn x() {}\n")
+	write(t, filepath.Join(crate, "examples/e.rs"), "fn main() {}\n")
+	write(t, filepath.Join(crate, ".cargo_vcs_info.json"), "{}")
+	files, err := walkCrate(crate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(files)
+	if want := []string{"Cargo.toml", "examples/e.rs", "tests/hidden.rs"}; !slices.Equal(files, want) {
+		t.Fatalf("files %v, want %v", files, want)
+	}
+	if len((Rust{}).Excludes()) != 0 {
+		t.Fatalf("default excludes: %v", (Rust{}).Excludes())
+	}
+}
