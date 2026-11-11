@@ -54,3 +54,19 @@ jobs:
           cache: false
       - run: go build -o bin/shadybin ./cmd/shadybin
       - run: bash .github/certify/test-sealed-rebuild.sh bin/shadybin
+
+  # The Swift SDK uses CryptoKit, which is Apple's, so it is tested on macOS, with the
+  # oldest Xcode it supports (Swift 6.0).
+  swift-sdk:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Select Xcode 16.0
+        run: |
+          dir=/Applications/Xcode_16.0.app/Contents/Developer
+          if [ ! -d "$dir" ]; then echo "Xcode 16.0 is not on this runner; it has:"; ls -d /Applications/Xcode_*.app; exit 1; fi
+          echo "DEVELOPER_DIR=$dir" >> "$GITHUB_ENV"
+      - run: make sdk-swift

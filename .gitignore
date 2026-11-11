@@ -7,3 +7,5 @@ sdk/zig/zig-out/
 sdk/js/node_modules/
 sdk/js/dist/
 __pycache__/
+/.build/
+/.swiftpm/
