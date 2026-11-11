@@ -7,9 +7,9 @@
 #    writes the record. This runs before any of the vendor's code, as the runner's user.
 # 2. The build runs as shadybuild, a user with no sudo, who can therefore never undo what
 #    follows; its fetch commands with the network.
-# 3. The firewall then drops every packet shadybuild sends, and all DNS from the machine:
-#    on macOS a lookup goes through mDNSResponder, which no per-user rule sees, and a
-#    lookup is enough to carry code in.
+# 3. The firewall then drops every packet shadybuild sends. On macOS a lookup goes through
+#    mDNSResponder, which no per-user firewall rule sees, and a lookup is enough to carry
+#    code in, so shadybuild is also denied mDNSResponder's socket; the runner keeps DNS.
 # 4. Its run commands, without the network; then the firewall opens again, whatever
 #    happened.
 #
@@ -19,6 +19,7 @@ set -euo pipefail
 sb=$1 project=$2 index=$3 tag=$4 src=$5 out=$6 record=$7
 builder=shadybuild
 uid=4815
+dns_acl="user:$builder deny read,write,append,readattr,writeattr,readextattr,writeextattr,readsecurity"
 
 "$sb" seal -project "$project" -tag "$tag" -src "$src" -o "$record"
 
@@ -81,39 +82,38 @@ close_network() {
   Darwin)
     printf '%s\n' \
       "block drop out quick proto { tcp udp } user $builder" \
-      'block drop out quick proto { tcp udp } to port { 53 853 5353 } user _mdnsresponder' \
       'block drop out quick inet proto icmp icmp-type echoreq' \
       'block drop out quick inet6 proto icmp6 icmp6-type echoreq' | sudo pfctl -q -a com.apple/shadybin -f -
     sudo pfctl -q -E 2>/dev/null || true
-    sudo dscacheutil -flushcache
-    sudo killall -HUP mDNSResponder || true
+    sudo chmod +a "$dns_acl" /var/run/mDNSResponder
     ;;
   Linux)
+    # Lookups go to systemd-resolved over a socket of the builder's own, so this covers
+    # them too; the check below proves it.
     for t in iptables ip6tables; do
       sudo "$t" -I OUTPUT -m owner --uid-owner "$builder" -j REJECT
-      for proto in udp tcp; do
-        sudo "$t" -I OUTPUT -m owner --uid-owner systemd-resolve -p "$proto" --dport 53 -j REJECT
-      done
     done
-    sudo resolvectl flush-caches || true
     ;;
   esac
-  # The proof the build has no network: the builder cannot reach anything.
+  # The proof the build has no network: the builder can neither reach nor look up anything.
   if as_builder curl -fsS -m 10 -o /dev/null https://github.com 2>/dev/null; then
     echo "the network is still open to $builder" >&2; return 1
+  fi
+  if as_builder python3 -c "import socket; socket.getaddrinfo('github.com', 443)" 2>/dev/null; then
+    echo "$builder can still look names up" >&2; return 1
   fi
 }
 open_network() {
   # macOS starts per-user services for the builder; none may outlive its build.
   sudo pkill -u "$builder" 2>/dev/null || true
   case "$(uname -s)" in
-  Darwin) sudo pfctl -q -a com.apple/shadybin -F all 2>/dev/null || true ;;
+  Darwin)
+    sudo chmod -a "$dns_acl" /var/run/mDNSResponder 2>/dev/null || true
+    sudo pfctl -q -a com.apple/shadybin -F all 2>/dev/null || true
+    ;;
   Linux)
     for t in iptables ip6tables; do
       sudo "$t" -D OUTPUT -m owner --uid-owner "$builder" -j REJECT 2>/dev/null || true
-      for proto in udp tcp; do
-        sudo "$t" -D OUTPUT -m owner --uid-owner systemd-resolve -p "$proto" --dport 53 -j REJECT 2>/dev/null || true
-      done
     done
     ;;
   esac
