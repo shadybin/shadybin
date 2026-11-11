@@ -56,11 +56,11 @@ type swiftPin struct {
 
 // Modules lists the project's files and fetches every pinned package.
 func (s Swift) Modules(ctx context.Context, src string, log io.Writer) ([]*Module, error) {
-	files, err := gitOut(ctx, src, log, append([]string{"ls-files", "--", "."}, s.Excludes()...)...)
+	files, err := lsFiles(ctx, src, log, append([]string{"--", "."}, s.Excludes()...)...)
 	if err != nil {
 		return nil, err
 	}
-	mods := []*Module{{Path: s.Repo, Dir: src, Main: true, InRepo: true, Files: byDir(s.Repo, strings.Fields(files))}}
+	mods := []*Module{{Path: s.Repo, Dir: src, Main: true, InRepo: true, Files: byDir(s.Repo, files)}}
 	pins, err := readSwiftResolved(src)
 	if err != nil {
 		return nil, err
