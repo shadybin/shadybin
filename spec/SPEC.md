@@ -192,11 +192,12 @@ Each language's tools say which code is compiled in:
   Build scripts and proc macros run at build time, so they count. Dev-dependencies do
   not. A crate served from a directory in the repository, by source replacement, is the
   vendor's code.
-- **Swift:** the repository's files but for `Tests` and `Benchmarks`, and every package
-  `Package.resolved` pins, each fetched from its https repository at the pinned commit with
-  its submodules, as SwiftPM fetches it. `Package.swift` is a program, so which targets and
-  products a build uses is not known without running it: every pinned package is reviewed,
-  all of its files but for tests, benchmarks, examples and documentation catalogs. A
+- **Swift:** the repository's files, and every package `Package.resolved` pins, each
+  fetched from its https repository at the pinned commit with its submodules, as SwiftPM
+  fetches it. `Package.swift` is a program, so which targets and products a build uses,
+  and which paths they compile, is not known without running it: every pinned package is
+  reviewed, and every file of it, tests and documentation included, since a manifest can
+  give a shipped target any path. A
   manifest that declares packages without a `Package.resolved` is refused, and so are
   packages from a registry or a local path.
 

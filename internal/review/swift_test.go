@@ -90,8 +90,9 @@ func TestSwiftModules(t *testing.T) {
 		mainFiles = append(mainFiles, fs...)
 	}
 	slices.Sort(mainFiles)
-	if want := []string{"Package.resolved", "Package.swift", "Sources/App/main.swift"}; !slices.Equal(mainFiles, want) {
-		t.Fatalf("main files %v, want %v (no tests)", mainFiles, want)
+	// Tests too: a manifest can give a shipped target a path under Tests.
+	if want := []string{"Package.resolved", "Package.swift", "Sources/App/main.swift", "Tests/AppTests/AppTests.swift"}; !slices.Equal(mainFiles, want) {
+		t.Fatalf("main files %v, want %v", mainFiles, want)
 	}
 
 	if dep.Main || dep.InRepo || dep.Version != "2.0.0" || dep.Provenance != "from its repository" {
@@ -103,8 +104,9 @@ func TestSwiftModules(t *testing.T) {
 	}
 	slices.Sort(depFiles)
 	// The pinned commit, with its submodule (a relative URL, resolved against the package's
-	// repository); no tests, no documentation catalog, no git files.
-	if want := []string{".gitmodules", "Package.swift", "Sources/CHelper/helper.c", "Sources/Dep/Dep.swift"}; !slices.Equal(depFiles, want) {
+	// repository); everything but git's own files, tests and documentation included.
+	if want := []string{".gitmodules", "Package.swift", "Sources/CHelper/helper.c", "Sources/Dep/Dep.docc/Dep.md",
+		"Sources/Dep/Dep.swift", "Tests/DepTests/DepTests.swift"}; !slices.Equal(depFiles, want) {
 		t.Fatalf("dependency files %v, want %v", depFiles, want)
 	}
 	if data, _ := os.ReadFile(filepath.Join(dep.Dir, "Sources/Dep/Dep.swift")); !strings.Contains(string(data), "{ 2 }") {

@@ -20,12 +20,12 @@ import (
 
 // Swift is the Source for Swift packages. Package.swift is a program: evaluating it, as
 // `swift package` does, would run the vendor's code in the job that holds the API key and
-// attests. So it never runs. The project's files are those git tracks, but for tests and
-// Exclude; its dependencies are every package Package.resolved pins, each fetched from its
-// repository at the pinned commit, with its submodules, as SwiftPM fetches it. A pin the
-// build does not use is reviewed anyway: knowing which ones it uses would mean running the
-// manifest. A package's files are all of its tree but for tests and documentation, since
-// which targets a product links is also only known by running its manifest.
+// attests. So it never runs. The project's files are those git tracks, but for Exclude; its
+// dependencies are every package Package.resolved pins, each fetched from its repository at
+// the pinned commit, with its submodules, as SwiftPM fetches it. A pin the build does not use
+// is reviewed anyway: knowing which ones it uses would mean running the manifest. A package's
+// files are all of its tree. Nothing is left out by its name, tests or documentation
+// included: a manifest can give a shipped target any path, such as Tests/Hidden.
 type Swift struct {
 	// Repo names the project's module: github.com/owner/name.
 	Repo string
@@ -189,8 +189,8 @@ func fetchSwiftPackage(ctx context.Context, location, revision string, log io.Wr
 	return dir, nil
 }
 
-// walkSwiftPackage lists a fetched package's files, leaving out what SwiftPM never builds
-// into a product: git's own files, tests, benchmarks, examples and documentation catalogs.
+// walkSwiftPackage lists a fetched package's files, all but git's own. A directory's name
+// says nothing about whether a target compiles it: a manifest can name any path.
 func walkSwiftPackage(dir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(dir, func(abs string, d fs.DirEntry, err error) error {
@@ -200,12 +200,7 @@ func walkSwiftPackage(dir string) ([]string, error) {
 		rel, _ := filepath.Rel(dir, abs)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			switch {
-			case d.Name() == ".git", strings.HasSuffix(d.Name(), ".docc"):
-				return filepath.SkipDir
-			}
-			switch rel {
-			case "Tests", "Benchmarks", "Examples", "Snippets", ".build", ".swiftpm":
+			if d.Name() == ".git" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -256,10 +251,10 @@ func (s Swift) Fetch(ctx context.Context, src string, m *Module, version string,
 	return "", fmt.Errorf("swift package %s@%s is not in %s's Package.resolved", m.Path, version, s.PreviousTag)
 }
 
-// Excludes leave out tests and benchmarks, which SwiftPM never builds into a product, and
-// the project's own Exclude.
+// Excludes are the project's Exclude, as git exclude pathspecs. There are no defaults, for
+// the reason walkSwiftPackage leaves nothing out.
 func (s Swift) Excludes() []string {
-	out := []string{":(exclude)Tests/**", ":(exclude)Benchmarks/**"}
+	var out []string
 	for _, e := range s.Exclude {
 		if !strings.HasPrefix(e, ":") {
 			e = ":(exclude)" + e
