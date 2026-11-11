@@ -202,3 +202,27 @@ func TestNewRunBuildsItsOwnLink(t *testing.T) {
 		t.Fatal("loaded a run whose link is not GitHub's")
 	}
 }
+
+func TestLoadProjectSwift(t *testing.T) {
+	load := func(xcode string) error {
+		p := filepath.Join(t.TempDir(), "shadybin.json")
+		data := `{"repo": "github.com/acme/app", "language": "swift", "checksums": "*.sha256",
+			"builds": [{"runner": "xcode-27", "toolchain": {"xcode": "` + xcode + `"},
+				"run": ["release/build.sh"], "artifacts": ["dist/app.zip"]}]}`
+		if err := os.WriteFile(p, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadProject(p)
+		return err
+	}
+	for _, ok := range []string{"27", "27.2", "27.2.1"} {
+		if err := load(ok); err != nil {
+			t.Errorf("xcode %q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "27.2-beta", "../27.2", "27.2/../../x"} {
+		if load(bad) == nil {
+			t.Errorf("xcode %q accepted", bad)
+		}
+	}
+}

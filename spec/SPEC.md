@@ -133,10 +133,11 @@ How a project is rebuilt and reviewed lives in the registry, not the vendor's
 repository, so a vendor cannot change how its release is checked from the release being
 checked.
 
-- `language`: `go`, `zig` or `rust`.
+- `language`: `go`, `zig`, `rust` or `swift`.
 - `builds`: one per published binary set. Each has a GitHub-hosted `runner`, the
   `toolchain` to install (`go`: a version or `go.mod`; `zig`: a version; `rust`: a
-  version or `rust-toolchain.toml`), the shell commands to `run` in the checked-out tag,
+  version or `rust-toolchain.toml`; `xcode`: a version the macOS runner image has, such as
+  `27.2`, selected with `DEVELOPER_DIR`), the shell commands to `run` in the checked-out tag,
   and the `artifacts` they make. The build sees `SOURCE_DATE_EPOCH`, the tag's commit
   time, and `TAG`, and none of the caller's credentials: variables that look like keys,
   tokens or passwords, and the Actions runtime's own, are left out.
@@ -162,7 +163,9 @@ pinned archive metadata and a pinned GoReleaser. Rust needs `--remap-path-prefix
 pinned toolchain. Archives are compared by what they install, so their file times and
 owners need not be fixed. Zig
 and C embed absolute paths, so the toolchain must be installed where the vendor's release
-installs it. The rebuild checks out the tag at the workspace root, as the release job
+installs it. Swift writes absolute paths into the linker's debug map, so link with
+`-Xlinker -S`; and build with `--force-resolved-versions`, so the build uses exactly the
+packages `Package.resolved` pins and the review saw. The rebuild checks out the tag at the workspace root, as the release job
 does.
 
 ## Manifest
@@ -173,8 +176,8 @@ running programs, system calls, unsafe pointers and so on. These come from
 [Capslock](https://github.com/google/capslock), at a pinned version, run for each target
 GOOS, with the manifest recording the union. Transitive capabilities are left out,
 because in a real binary nearly every package reaches nearly everything. The report also
-leaves out reflection, runtime and unanalyzed calls, for the same reason. Zig and Rust
-have no capability analysis; their manifests list packages and versions only.
+leaves out reflection, runtime and unanalyzed calls, for the same reason. Zig, Rust and
+Swift have no capability analysis; their manifests list packages and versions only.
 
 ## Review
 
@@ -189,10 +192,18 @@ Each language's tools say which code is compiled in:
   Build scripts and proc macros run at build time, so they count. Dev-dependencies do
   not. A crate served from a directory in the repository, by source replacement, is the
   vendor's code.
+- **Swift:** the repository's files, and every package `Package.resolved` pins, each
+  fetched from its https repository at the pinned commit with its submodules, as SwiftPM
+  fetches it. `Package.swift` is a program, so which targets and products a build uses,
+  and which paths they compile, is not known without running it: every pinned package is
+  reviewed, and every file of it, tests and documentation included, since a manifest can
+  give a shipped target any path. A
+  manifest that declares packages without a `Package.resolved` is refused, and so are
+  packages from a registry or a local path.
 
 None of this runs the vendor's code. The job that reviews and attests holds the vendor's
 API key and the identity that attests, so a program of the vendor's running there could
-rewrite what it attests. `build.zig` never runs; cargo runs with its toolchain, `rustc`
+rewrite what it attests. `build.zig` and `Package.swift` never run; cargo runs with its toolchain, `rustc`
 and wrappers pinned over anything `rust-toolchain.toml` or `.cargo/config.toml` says;
 every tool runs without credentials in its environment. Only the rebuild jobs run the
 vendor's build, and they hold no secrets. The certify job takes the rebuilt files only
@@ -218,7 +229,8 @@ The code is split into units, one model call each:
 - **A third-party module whose version changed** is reviewed as the diff since its
   previous version. Takeovers like the xz backdoor arrive in a new version.
 - **A third-party module new to the project** is reviewed at its **surface**: the parts a
-  supply-chain attack would use. That is build scripts and build-time code; code run when
+  supply-chain attack would use. That is build scripts and build-time code (for Swift, the
+  package manifest and plugins); code run when
   the program loads (`init`, constructors); binary, assembly and C files; files with
   embedding, linking or foreign-function markers; files that run programs, use the
   network or load code; and, for Go, every file of a package with a sensitive capability.
@@ -237,6 +249,8 @@ source repository:
 - **Zig packages** fetched from git, or as an archive GitHub makes from a tag or
   commit, come from their repository. Any other archive is not checkable, and the report
   says so.
+- **Swift packages** are fetched from their git repository by commit, so they cannot
+  differ from it.
 - **Rust crates** are whatever the maintainer uploaded, so each is compared, file by
   file, with its repository at the commit its `.cargo_vcs_info.json` names. A file the
   crate has and the repository does not, or one with different content there, is

@@ -22,6 +22,8 @@ func sourceFor(p *registry.Project, previousTag string) review.Source {
 		return review.Zig{Repo: p.Repo, Exclude: p.Analyze.Exclude, PreviousTag: previousTag}
 	case "rust":
 		return review.Rust{Repo: p.Repo, Packages: p.Analyze.Packages, Targets: p.Analyze.Targets, Exclude: p.Analyze.Exclude}
+	case "swift":
+		return review.Swift{Repo: p.Repo, Exclude: p.Analyze.Exclude, PreviousTag: previousTag}
 	}
 	panic(fmt.Sprintf("no source for %q", p.Language))
 }
