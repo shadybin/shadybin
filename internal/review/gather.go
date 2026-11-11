@@ -376,6 +376,14 @@ var surfaceMarkers = []string{
 	"std.process.Child", "std.http.", "std.net.", "std.posix.execve", "std.DynLib", // Zig
 }
 
+// swiftSurfaceMarkers are the same for Swift. They apply to .swift files only, so the
+// surface of a package in another language, and the cached reviews keyed by it, stay as
+// they were.
+var swiftSurfaceMarkers = []string{
+	"@_cdecl", "@_silgen_name", "CompilerPlugin", "dlopen", "dlsym", "Process()", "posix_spawn",
+	"URLSession", "NWConnection", "socket(",
+}
+
 // surfaceFile reports whether a file is surface: not plain source, a build script, or
 // containing a surface marker.
 func surfaceFile(name string, data []byte) bool {
@@ -386,11 +394,21 @@ func surfaceFile(name string, data []byte) bool {
 	switch {
 	case base == "build.rs", base == "build.zig", base == "build.zig.zon":
 		return true
+	// A Swift package's manifest and its plugins run at build time.
+	case base == "Package.swift", strings.HasPrefix(base, "Package@swift-") && strings.HasSuffix(base, ".swift"),
+		strings.HasPrefix(filepath.ToSlash(name), "Plugins/"):
+		return true
 	case strings.HasSuffix(base, ".s"), strings.HasSuffix(base, ".S"), strings.HasSuffix(base, ".syso"),
 		strings.HasSuffix(base, ".c"), strings.HasSuffix(base, ".h"), strings.HasSuffix(base, ".cc"), strings.HasSuffix(base, ".cpp"):
 		return true
+	case strings.HasSuffix(base, ".m"), strings.HasSuffix(base, ".mm"): // Objective-C, in Swift packages
+		return true
 	}
-	for _, mk := range surfaceMarkers {
+	markers := surfaceMarkers
+	if strings.HasSuffix(base, ".swift") {
+		markers = swiftSurfaceMarkers
+	}
+	for _, mk := range markers {
 		if bytes.Contains(data, []byte(mk)) {
 			return true
 		}
