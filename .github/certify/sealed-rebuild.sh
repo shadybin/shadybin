@@ -96,6 +96,8 @@ close_network() {
   fi
 }
 open_network() {
+  # macOS starts per-user services for the builder; none may outlive its build.
+  sudo pkill -u "$builder" 2>/dev/null || true
   case "$(uname -s)" in
   Darwin) sudo pfctl -q -a com.apple/shadybin -F all 2>/dev/null || true ;;
   Linux)
@@ -116,5 +118,11 @@ trap open_network EXIT
 step closing the network
 close_network
 step run
-rebuild run
-step done
+# A line every 30 seconds while the build runs offline, so its log shows it is alive.
+( while sleep 30; do step "still building"; done ) &
+heartbeat=$!
+code=0
+rebuild run || code=$?
+kill "$heartbeat" 2>/dev/null || true
+step "done ($code)"
+exit "$code"
