@@ -40,16 +40,21 @@ Linux)
 *) echo "a sealed rebuild needs macOS or Linux" >&2; exit 1 ;;
 esac
 
-# The builder reaches shadybin, the toolchains and the checkout, writes the checkout and
-# out, and reads the record; nothing of the runner's is its to write.
-for p in "$sb" "$src" "$out" "$record"; do
+# The builder reaches shadybin, the toolchains, the project file and the checkout, writes
+# the checkout and out, and reads the record; nothing of the runner's is its to write.
+for p in "$sb" "$project" "$src" "$out" "$record"; do
   d=$(dirname "$p")
   while [ "$d" != / ]; do sudo chmod o+x "$d"; d=$(dirname "$d"); done
 done
 sudo chmod o+rx "$sb"
+sudo chmod o+r "$project" "$record"
 mkdir -p "$out"
 sudo chown -R "$builder" "$src" "$out"
-chmod 644 "$record"
+if ! sudo -n -u "$builder" test -r "$project"; then
+  echo "$builder cannot read $project:" >&2
+  d=$project; while [ "$d" != / ]; do ls -ld "$d" >&2; d=$(dirname "$d"); done
+  exit 1
+fi
 
 as_builder() {
   local env=(PATH="$PATH")
