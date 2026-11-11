@@ -41,26 +41,28 @@ esac
 
 # The builder reaches shadybin, the toolchains, the project file and the checkout, writes
 # the checkout and out, and reads the record; nothing of the runner's is its to write.
+# Group bits too: on macOS the builder is in staff, the group of the runner's files, and a
+# member of a file's group gets its group bits, never its other bits.
 for p in "$sb" "$project" "$src" "$out" "$record"; do
   d=$(dirname "$p")
-  while [ "$d" != / ]; do sudo chmod o+x "$d"; d=$(dirname "$d"); done
+  while [ "$d" != / ]; do sudo chmod go+x "$d"; d=$(dirname "$d"); done
 done
-sudo chmod o+rx "$sb"
-sudo chmod o+r "$project" "$record"
+sudo chmod go+rx "$sb"
+sudo chmod go+r "$project" "$record"
 mkdir -p "$out"
 sudo chown -R "$builder" "$src" "$out"
-if ! sudo -n -u "$builder" test -r "$project"; then
+if ! (cd / && sudo -n -u "$builder" test -r "$project"); then
   echo "$builder cannot read $project:" >&2
   d=$project; while [ "$d" != / ]; do ls -lde "$d" >&2; d=$(dirname "$d"); done
   id "$builder" >&2 || true
-  sudo -n -u "$builder" cat "$project" >/dev/null || true
+  (cd / && sudo -n -u "$builder" cat "$project" >/dev/null) || true
   exit 1
 fi
 
 as_builder() {
   local env=(PATH="$PATH")
   [ -n "${DEVELOPER_DIR:-}" ] && env+=(DEVELOPER_DIR="$DEVELOPER_DIR")
-  sudo -n -u "$builder" -H env "${env[@]}" "$@"
+  (cd / && sudo -n -u "$builder" -H env "${env[@]}" "$@")
 }
 rebuild() {
   as_builder "$sb" rebuild -project "$project" -build "$index" -tag "$tag" -src "$src" -sealed "$record" -out "$out" -phase "$1"
