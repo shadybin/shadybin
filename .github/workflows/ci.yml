@@ -33,3 +33,24 @@ jobs:
           python-version: "3.9"
       - run: rustup component add rustfmt clippy
       - run: make check
+
+  # A sealed rebuild on real runners, the way certify's rebuild job runs one: the same
+  # bytes for a clean project, something else for a build that ships a file the review
+  # left out, and no network or sudo for the build.
+  sealed-rebuild:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go build -o bin/shadybin ./cmd/shadybin
+      - run: bash .github/certify/test-sealed-rebuild.sh bin/shadybin

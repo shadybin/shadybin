@@ -47,6 +47,8 @@ func runRebuild(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	src := fs.String("src", "", "a clean checkout of the tag; empty clones it")
 	out := fs.String("out", "", "directory to collect the built files in")
 	which := fs.Int("build", -1, "run only the project's build at this index, from 0; -1 runs them all")
+	phase := fs.String("phase", "", "fetch (the fetch commands only), run (the run commands and artifacts), or empty for both")
+	sealed := fs.String("sealed", "", "the seal record of a checkout seal sealed, which has no .git")
 	if err := parse(fs, args, "project", "tag", "out"); err != nil {
 		return err
 	}
@@ -57,7 +59,7 @@ func runRebuild(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err := verify.ValidTag(*tag); err != nil {
 		return err
 	}
-	built, err := rebuild(ctx, p, *which, *tag, *src, *out, stderr)
+	built, err := rebuild(ctx, p, *which, *tag, *src, *out, *phase, *sealed, stderr)
 	if err != nil {
 		return err
 	}

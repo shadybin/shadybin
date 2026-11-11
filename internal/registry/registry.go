@@ -53,6 +53,12 @@ type Project struct {
 	// upstream release it claims to be. One that matches is third-party code; one that
 	// does not is the vendor's, and reviewed whole.
 	Vendored []Vendored `json:"vendored,omitempty"`
+	// Seal rebuilds the release from the reviewed files alone: before the build runs,
+	// every file of the repository outside the review is emptied and .git removed; the
+	// build's fetch commands run with the network, and its run commands without it, as a
+	// user who cannot get it back. A file the review left out cannot be compiled in, so the
+	// rebuild matches the published release only if nothing outside the review is in it.
+	Seal bool `json:"seal,omitempty"`
 }
 
 // Build is one rebuild: a runner, its toolchain, the commands, and the files they make.
@@ -62,6 +68,9 @@ type Build struct {
 	// Toolchain names versions to install, by tool: go (a version, or "go.mod"), zig, rust
 	// (a version, or "rust-toolchain.toml"), xcode (a version the runner image has installed).
 	Toolchain map[string]string `json:"toolchain,omitempty"`
+	// Fetch are shell commands run before Run, with the network, for a sealed project:
+	// fetching pinned dependencies and toolchains. Run then runs without the network.
+	Fetch []string `json:"fetch,omitempty"`
 	// Run are shell commands run in order in the checked-out tag.
 	Run []string `json:"run"`
 	// Artifacts are globs, relative to the checkout, of the files the build makes.
@@ -128,7 +137,13 @@ func LoadProject(path string) (*Project, error) {
 		if len(p.Analyze.Packages) == 0 || len(p.Analyze.Targets) == 0 {
 			return nil, fmt.Errorf("%s: a go project names its analyze packages and targets", path)
 		}
-	case "zig", "rust", "swift":
+	case "zig", "rust":
+	case "swift":
+		// SwiftPM's manifest is a program, so which files a build compiles is known only by
+		// running it; a sealed rebuild proves the review covered them.
+		if !p.Seal {
+			return nil, fmt.Errorf("%s: a swift project is sealed: set \"seal\": true", path)
+		}
 	default:
 		return nil, fmt.Errorf("%s: language %q: want go, zig, rust or swift", path, p.Language)
 	}
@@ -138,6 +153,9 @@ func LoadProject(path string) (*Project, error) {
 	for i, b := range p.Builds {
 		if b.Runner == "" || len(b.Run) == 0 || len(b.Artifacts) == 0 {
 			return nil, fmt.Errorf("%s: build %d needs a runner, run and artifacts", path, i)
+		}
+		if len(b.Fetch) > 0 && !p.Seal {
+			return nil, fmt.Errorf("%s: build %d: fetch commands are for a sealed project", path, i)
 		}
 		if x, ok := b.Toolchain["xcode"]; ok && !xcodeVersion.MatchString(x) {
 			return nil, fmt.Errorf("%s: build %d: xcode %q is not a version", path, i, x)
