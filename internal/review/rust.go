@@ -175,8 +175,9 @@ func (r Rust) add(ctx context.Context, src string, md *cargoMetadata, mods map[s
 	return nil
 }
 
-// walkCrate lists a published crate's files, leaving out what cargo never builds into a
-// binary: tests, benches and examples.
+// walkCrate lists a published crate's files, all but cargo's own bookkeeping. Nothing is
+// left out by its directory's name: Cargo.toml can give a library or binary any path, such
+// as tests/hidden.rs, and #[path] can pull any file into a module.
 func walkCrate(dir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(dir, func(abs string, d fs.DirEntry, err error) error {
@@ -186,8 +187,7 @@ func walkCrate(dir string) ([]string, error) {
 		rel, _ := filepath.Rel(dir, abs)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			switch rel {
-			case "tests", "benches", "examples", "target", ".git":
+			if rel == ".git" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -249,10 +249,10 @@ func fetchCrate(ctx context.Context, name, version string) (archive, error) {
 	return readArchive(u, data)
 }
 
-// Excludes leave out tests, benches and examples, which cargo build never compiles into a
-// binary, and the project's own Exclude.
+// Excludes are the project's Exclude. There are no defaults, for the reason walkCrate
+// leaves nothing out by name.
 func (r Rust) Excludes() []string {
-	out := []string{":(exclude)**/tests/**", ":(exclude)**/benches/**", ":(exclude)**/examples/**", ":(exclude)tests/**", ":(exclude)benches/**", ":(exclude)examples/**"}
+	var out []string
 	for _, e := range r.Exclude {
 		if !strings.HasPrefix(e, ":") {
 			e = ":(exclude)" + e
