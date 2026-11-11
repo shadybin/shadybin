@@ -25,17 +25,12 @@ uid=4815
 case "$(uname -s)" in
 Darwin)
   if ! id "$builder" >/dev/null 2>&1; then
-    sudo dscl . -create "/Users/$builder"
-    sudo dscl . -create "/Users/$builder" UserShell /bin/bash
-    sudo dscl . -create "/Users/$builder" UniqueID "$uid"
-    sudo dscl . -create "/Users/$builder" PrimaryGroupID 20
-    sudo dscl . -create "/Users/$builder" NFSHomeDirectory "/Users/$builder"
-    # An account with no GeneratedUID cannot be matched against an ACL, such as the one on
-    # the runner's home, and is refused by it.
-    sudo dscl . -create "/Users/$builder" GeneratedUID "$(uuidgen)"
-    sudo dscl . -create "/Users/$builder" RealName "shadybin build"
-    sudo mkdir -p "/Users/$builder"
-    sudo chown "$builder:staff" "/Users/$builder"
+    # sysadminctl makes a whole account, GeneratedUID included, which ACLs (the runner's
+    # home has one) need to match a user; a bare dscl record is refused by them.
+    sudo sysadminctl -addUser "$builder" -fullName "shadybin build" -UID "$uid" \
+      -password "$(uuidgen)" -home "/Users/$builder" 2>&1 | grep -v -i -E 'secure ?token|^$' >&2 || true
+    sudo createhomedir -c -u "$builder" >/dev/null
+    id "$builder" >/dev/null
   fi
   ;;
 Linux)
