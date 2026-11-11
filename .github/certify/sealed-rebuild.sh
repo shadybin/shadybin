@@ -112,7 +112,12 @@ open_network() {
   esac
 }
 
+step() { echo "$(date -u +%T) sealed-rebuild: $*" >&2; }
+step fetch
 rebuild fetch
 trap open_network EXIT
+step closing the network
 close_network
+step run
 rebuild run
+step done

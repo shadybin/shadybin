@@ -53,9 +53,18 @@ unsealed() { # <out>
   "$sb" rebuild -project "$work/shadybin.json" -build 0 -tag v1.0.0 -src "$src" -out "$1" >/dev/null
 }
 sealed() { # <out>: like certify's rebuild job, at the runner's workspace path
-  local src="$work/sealed-$RANDOM" record="$work/seal-$RANDOM.txt"
+  local src="$work/sealed-$RANDOM" record="$work/seal-$RANDOM.txt" code=0
   git clone -q --branch v1.0.0 "$repo" "$src"
-  bash "$here/sealed-rebuild.sh" "$sb" "$work/shadybin.json" 0 v1.0.0 "$src" "$1" "$record"
+  # A watchdog, so a hang fails with what the builder was doing rather than a cancelled job.
+  ( sleep 300; echo "WATCHDOG: still running after 5 minutes; the builder's processes:" >&2
+    ps -axo user,pid,etime,command 2>/dev/null | grep -E '^shadybuild' >&2 || true
+    sudo pkill -u shadybuild || true ) &
+  local watchdog=$!
+  echo "$(date -u +%T) sealed rebuild into $1" >&2
+  bash "$here/sealed-rebuild.sh" "$sb" "$work/shadybin.json" 0 v1.0.0 "$src" "$1" "$record" || code=$?
+  kill "$watchdog" 2>/dev/null || true
+  echo "$(date -u +%T) sealed rebuild exited $code" >&2
+  return "$code"
 }
 ok() { echo "ok: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
