@@ -204,3 +204,26 @@ func TestSwiftSurface(t *testing.T) {
 		}
 	}
 }
+
+// TestSwiftFileNames: a path with a space or a non-ASCII byte is one file, under its own name.
+func TestSwiftFileNames(t *testing.T) {
+	src := t.TempDir()
+	write(t, filepath.Join(src, "Package.swift"), "// swift-tools-version: 6.4\nimport PackageDescription\nlet package = Package(name: \"app\")\n")
+	write(t, filepath.Join(src, "Sources/App/two words.swift"), "let a = 1\n")
+	write(t, filepath.Join(src, "Sources/App/café.swift"), "let b = 2\n")
+	gitT(t, src, "init", "-q", "-b", "main")
+	gitT(t, src, "add", ".")
+	gitT(t, src, "commit", "-q", "-m", "app")
+	mods, err := Swift{Repo: "github.com/acme/app"}.Modules(context.Background(), src, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, fs := range mods[0].Files {
+		files = append(files, fs...)
+	}
+	slices.Sort(files)
+	if want := []string{"Package.swift", "Sources/App/café.swift", "Sources/App/two words.swift"}; !slices.Equal(files, want) {
+		t.Fatalf("files %q, want %q", files, want)
+	}
+}

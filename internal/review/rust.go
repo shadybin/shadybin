@@ -143,11 +143,11 @@ func (r Rust) add(ctx context.Context, src string, md *cargoMetadata, mods map[s
 			if rel != "." {
 				name = r.Repo + "/" + filepath.ToSlash(rel)
 			}
-			files, err := gitOut(ctx, src, log, append([]string{"ls-files", "--", rel}, r.Excludes()...)...)
+			files, err := lsFiles(ctx, src, log, append([]string{"--", rel}, r.Excludes()...)...)
 			if err != nil {
 				return err
 			}
-			m = &Module{Path: name, Dir: src, Main: id == first, InRepo: true, Files: byDir(name, strings.Fields(files))}
+			m = &Module{Path: name, Dir: src, Main: id == first, InRepo: true, Files: byDir(name, files)}
 		case strings.HasPrefix(*p.Source, "git+"):
 			repo, commit := gitSource(*p.Source)
 			files, err := walkCrate(dir)

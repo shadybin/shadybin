@@ -622,6 +622,22 @@ func execGit(ctx context.Context, dir string, stdout, stderr io.Writer, args ...
 	return cmd
 }
 
+// lsFiles lists the files git tracks, as git ls-files with args does, NUL-separated so that
+// no path is split at a space or quoted for its non-ASCII bytes.
+func lsFiles(ctx context.Context, dir string, log io.Writer, args ...string) ([]string, error) {
+	out, err := gitOut(ctx, dir, log, append([]string{"ls-files", "-z"}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
 func gitOut(ctx context.Context, dir string, log io.Writer, args ...string) (string, error) {
 	var out bytes.Buffer
 	if err := execGit(ctx, dir, &out, log, args...).Run(); err != nil {

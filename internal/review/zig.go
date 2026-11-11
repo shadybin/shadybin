@@ -38,11 +38,11 @@ func (z Zig) Modules(ctx context.Context, src string, log io.Writer) ([]*Module,
 	if err != nil {
 		return nil, err
 	}
-	files, err := gitOut(ctx, src, log, append(append([]string{"ls-files", "--"}, zonPaths(root)...), z.Excludes()...)...)
+	files, err := lsFiles(ctx, src, log, append(append([]string{"--"}, zonPaths(root)...), z.Excludes()...)...)
 	if err != nil {
 		return nil, err
 	}
-	main := &Module{Path: z.Repo, Dir: src, Main: true, InRepo: true, Files: byDir(z.Repo, strings.Fields(files))}
+	main := &Module{Path: z.Repo, Dir: src, Main: true, InRepo: true, Files: byDir(z.Repo, files)}
 	mods := []*Module{main}
 	f, err := newZigFetcher(src)
 	if err != nil {
