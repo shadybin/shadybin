@@ -131,6 +131,6 @@ step run
 heartbeat=$!
 code=0
 rebuild run || code=$?
-kill "$heartbeat" 2>/dev/null || true
+pkill -P "$heartbeat" 2>/dev/null || true; kill "$heartbeat" 2>/dev/null || true
 step "done ($code)"
 exit "$code"
