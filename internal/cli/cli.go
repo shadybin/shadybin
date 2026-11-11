@@ -21,6 +21,7 @@ type command struct {
 
 var commands = []command{
 	{"keygen", "make a signing key", runKeygen},
+	{"seal", "empty a checkout's files outside the review, or check a rebuild's seal", runSeal},
 	{"rebuild", "rebuild a release from its tag", runRebuild},
 	{"compare", "compare rebuilt files with the published checksums", runCompare},
 	{"manifest", "record what the code can do", runManifest},

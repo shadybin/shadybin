@@ -151,6 +151,9 @@ checked.
   repository's owner, `github.com/<owner>/`.
 - `vendored`: third-party copies kept in the repository. Each has its `path`, the
   upstream release's `name` and `version`, and its archive's `url` and `sha256`.
+- `seal`: rebuild from the reviewed files alone (see [Sealed rebuilds](#sealed-rebuilds)).
+  Required for `swift`. A sealed build's `fetch` commands run before its `run` commands,
+  with the network; `run` has none.
 
 Everything a rebuild runs is either in `shadybin.json`, which shadybin controls, or in
 the reviewed source: `build.zig`, `build.rs`, `.goreleaser.yaml` (name it in `files`).
@@ -167,6 +170,22 @@ installs it. Swift writes absolute paths into the linker's debug map, so link wi
 `-Xlinker -S`; and build with `--force-resolved-versions`, so the build uses exactly the
 packages `Package.resolved` pins and the review saw. The rebuild checks out the tag at the workspace root, as the release job
 does.
+
+### Sealed rebuilds
+
+Which files a build compiles is, for some languages, known only by running the build:
+SwiftPM's manifest is a program, `build.zig` too, and `exclude` is a promise. A sealed
+rebuild makes that promise checkable. Before any of the vendor's code runs, `shadybin seal`
+works out the scope, the files of the repository the review covers, by the same analysis
+the review uses; empties every other file the repository tracks; and removes `.git`, whose
+objects hold them too. The build then runs as a user without `sudo`: its `fetch` commands
+with the network, then, with the firewall dropping that user's packets and all DNS from the
+machine (on macOS a lookup goes through a daemon no per-user rule sees), its `run`
+commands. A file the review left out is empty by then and cannot be fetched again, so a
+build that needed one fails or makes something other than the published files, and the
+release does not certify. `seal` writes a record of the release, the commit, the scope's
+digest and how many files it emptied; the certify job recomputes the scope from its own
+checkout and refuses a record that does not match, or a sealed project's rebuild without one.
 
 ## Manifest
 
@@ -299,7 +318,7 @@ reviewed once, paid for by the first vendor who compiles it in.
    pinned to an exact one. It runs on the vendor's GitHub-hosted runners:
    - `plan` builds shadybin and reads `shadybin.json` from the registry.
    - `rebuild` runs each build on its own runner, with the tag checked out at the
-     workspace root as the vendor's release job has it.
+     workspace root as the vendor's release job has it; sealed, for a sealed project.
    - `certify` compares the rebuilt files with the published checksums, writes the
      manifest, reviews the code on the vendor's Claude API key, and writes the statement
      and report.

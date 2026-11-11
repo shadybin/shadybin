@@ -90,15 +90,16 @@ jobs:
           for os in linux darwin; do for arch in amd64 arm64; do
             (cd shadybin && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -o "../sb/shadybin-$os-$arch" ./cmd/shadybin)
           done; done
+          cp shadybin/.github/certify/sealed-rebuild.sh sb/
 
       - name: Plan the builds
         id: plan
         run: |
           repo="github.com/${GITHUB_REPOSITORY,,}"
           curl -fsSL "$REGISTRY/$repo/shadybin.json" -o sb/shadybin.json
-          echo "builds=$(jq -c '[.builds | to_entries[] | {index: .key, runner: .value.runner,
+          echo "builds=$(jq -c '(.seal // false) as $seal | [.builds | to_entries[] | {index: .key, runner: .value.runner,
             go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // ""),
-            xcode: (.value.toolchain.xcode // "")}]' sb/shadybin.json)" >> "$GITHUB_OUTPUT"
+            xcode: (.value.toolchain.xcode // ""), seal: $seal}]' sb/shadybin.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -164,6 +165,7 @@ jobs:
           DEVELOPER_DIR="$dir" xcodebuild -version
 
       - name: Rebuild
+        if: ${{ !matrix.build.seal }}
         env:
           INDEX: ${{ matrix.build.index }}
         run: |
@@ -172,10 +174,31 @@ jobs:
           chmod +x "$sb/shadybin-$os-$arch"
           "$sb/shadybin-$os-$arch" rebuild -project "$sb/shadybin.json" -build "$INDEX" -tag "$TAG" -src . -out "$RUNNER_TEMP/rebuilt"
 
+      # A sealed project rebuilds from the reviewed files alone, offline, as a user who can
+      # never get the network back: see sealed-rebuild.sh. certify checks the seal record
+      # against its own analysis.
+      - name: Rebuild, sealed
+        if: ${{ matrix.build.seal }}
+        env:
+          INDEX: ${{ matrix.build.index }}
+        run: |
+          sb="$RUNNER_TEMP/sb"
+          os=$(uname -s | tr A-Z a-z); arch=$(uname -m); [ "$arch" = x86_64 ] && arch=amd64; [ "$arch" = aarch64 ] && arch=arm64
+          chmod +x "$sb/shadybin-$os-$arch"
+          mkdir -p "$RUNNER_TEMP/sealed"
+          bash "$sb/sealed-rebuild.sh" "$sb/shadybin-$os-$arch" "$sb/shadybin.json" "$INDEX" "$TAG" "$GITHUB_WORKSPACE" \
+            "$RUNNER_TEMP/rebuilt" "$RUNNER_TEMP/sealed/seal-$INDEX.txt"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rebuilt-${{ matrix.build.index }}
           path: ${{ runner.temp }}/rebuilt/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ matrix.build.seal }}
+        with:
+          name: sealed-${{ matrix.build.index }}
+          path: ${{ runner.temp }}/sealed/
 
   certify:
     needs: rebuild
@@ -208,6 +231,14 @@ jobs:
           pattern: rebuilt-*
           path: ${{ runner.temp }}/rebuilt-artifacts
 
+      # The seal records of a sealed project's rebuilds, taken by the same rule. An unsealed
+      # project has none; a sealed one without its records fails closed at the comparison.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          pattern: sealed-*
+          path: ${{ runner.temp }}/sealed-artifacts
+
       - name: Set up
         run: |
           sb="$RUNNER_TEMP/sb"; chmod +x "$sb/shadybin-linux-amd64"
@@ -218,7 +249,15 @@ jobs:
           echo "LANGUAGE=$(jq -r .language "$sb/shadybin.json")" >> "$GITHUB_ENV"
           echo "ZIG=$(jq -r '[.builds[].toolchain.zig // empty][0] // ""' "$sb/shadybin.json")" >> "$GITHUB_ENV"
           echo "RUST=$(jq -r '[.builds[].toolchain.rust // empty][0] // ""' "$sb/shadybin.json")" >> "$GITHUB_ENV"
+          echo "SEAL=$(jq -r '.seal // false' "$sb/shadybin.json")" >> "$GITHUB_ENV"
           builds=$(jq '.builds | length' "$sb/shadybin.json")
+          for d in "$RUNNER_TEMP"/sealed-artifacts/*; do
+            [ -e "$d" ] || continue
+            n=$(basename "$d"); i=${n#sealed-}
+            if ! [[ "$i" =~ ^[0-9]+$ ]] || [ "$i" -ge "$builds" ]; then
+              echo "::error::artifact $n was not made by a rebuild job of this workflow"; exit 1
+            fi
+          done
           mkdir -p "$RUNNER_TEMP/rebuilt"
           for d in "$RUNNER_TEMP"/rebuilt-artifacts/*; do
             n=$(basename "$d"); i=${n#rebuilt-}
@@ -268,6 +307,15 @@ jobs:
             n=$(basename "$f")
             case "$n" in *.tar.gz|*.tgz|*.zip) gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$n" -D "$WORK/published-files" || true ;; esac
           done
+          # A sealed project's every rebuild was sealed to the scope this job's analysis gives.
+          sealed=""
+          if [ "$SEAL" = true ]; then
+            for i in $(seq 0 $(($(jq '.builds | length' "$PROJECT") - 1))); do
+              record="$RUNNER_TEMP/sealed-artifacts/sealed-$i/seal-$i.txt"
+              [ -f "$record" ] || { echo "::error::rebuild $i of a sealed project left no seal record"; exit 1; }
+              sealed=$("$SB" seal -project "$PROJECT" -tag "$TAG" -src . -check "$record")
+            done
+          fi
           set +e
           table=$("$SB" compare -published "$WORK/published-checksums.txt" -published-files "$WORK/published-files" "$RUNNER_TEMP/rebuilt")
           code=$?
@@ -279,6 +327,7 @@ jobs:
             echo
             echo "Rebuilt from tag \`$TAG\` ($(git rev-parse HEAD)) and compared with the published checksums."
             echo
+            if [ -n "$sealed" ]; then echo "$sealed"; echo; fi
             echo "$table"
           } > "$WORK/rebuild.md"
           cat "$WORK/rebuild.md" >> "$GITHUB_STEP_SUMMARY"

@@ -3,12 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/shadybin/shadybin/internal/checksums"
@@ -20,11 +22,38 @@ import (
 // rebuild runs the project's builds at tag (all of them, or only the one at index which,
 // as the certify workflow does on each build's runner), in src if given (which must be a
 // clean checkout of the tag) or in a fresh clone, and copies the artifacts into out.
-func rebuild(ctx context.Context, p *registry.Project, which int, tag, src, out string, log io.Writer) ([]verify.File, error) {
+//
+// phase is "fetch" (each build's fetch commands only), "run" (its run commands, then the
+// artifacts), or "" for both. sealed is the seal record of a checkout seal has sealed,
+// which has no .git to check the tag against: the record names the tag and its time.
+func rebuild(ctx context.Context, p *registry.Project, which int, tag, src, out, phase, sealed string, log io.Writer) ([]verify.File, error) {
+	if phase != "" && phase != "fetch" && phase != "run" {
+		return nil, fmt.Errorf("phase %q: want fetch, run or empty for both", phase)
+	}
 	if which >= len(p.Builds) {
 		return nil, fmt.Errorf("the project has %d builds; there is no build %d", len(p.Builds), which)
 	}
-	if src == "" {
+	var epoch string
+	if sealed != "" {
+		data, err := os.ReadFile(sealed)
+		if err != nil {
+			return nil, err
+		}
+		r, err := parseSealRecord(data)
+		if err != nil {
+			return nil, err
+		}
+		if r.Repo != p.Repo || r.Tag != tag {
+			return nil, fmt.Errorf("the seal record is for %s %s, not %s %s", r.Repo, r.Tag, p.Repo, tag)
+		}
+		if src == "" {
+			return nil, errors.New("a sealed rebuild runs in the sealed checkout: give -src")
+		}
+		if _, err := os.Stat(filepath.Join(src, ".git")); err == nil {
+			return nil, fmt.Errorf("%s still has .git: it is not sealed", src)
+		}
+		epoch = strconv.FormatInt(r.Epoch, 10)
+	} else if src == "" {
 		tmp, err := os.MkdirTemp("", "shadybin-rebuild-")
 		if err != nil {
 			return nil, err
@@ -35,26 +64,13 @@ func rebuild(ctx context.Context, p *registry.Project, which int, tag, src, out 
 			return nil, err
 		}
 	}
-	head, err := git(ctx, src, log, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	tagged, err := git(ctx, src, log, "rev-parse", "refs/tags/"+tag+"^{commit}")
-	if err != nil {
-		return nil, err
-	}
-	if head != tagged {
-		return nil, fmt.Errorf("%s is at %s, not at %s (%s)", src, head, tag, tagged)
-	}
-	if dirty, err := git(ctx, src, log, "status", "--porcelain"); err != nil {
-		return nil, err
-	} else if dirty != "" {
-		return nil, fmt.Errorf("%s has changes the tag does not:\n%s", src, dirty)
-	}
-	// Tools that honour SOURCE_DATE_EPOCH stamp the commit's time, not the build's.
-	epoch, err := git(ctx, src, log, "log", "-1", "--format=%ct")
-	if err != nil {
-		return nil, err
+	if sealed == "" {
+		// Tools that honour SOURCE_DATE_EPOCH stamp the commit's time, not the build's.
+		_, t, err := checkCheckout(ctx, src, tag, log)
+		if err != nil {
+			return nil, err
+		}
+		epoch = strconv.FormatInt(t, 10)
 	}
 	var files []verify.File
 	for i, b := range p.Builds {
@@ -72,13 +88,23 @@ func rebuild(ctx context.Context, p *registry.Project, which int, tag, src, out 
 		for k, v := range b.Env {
 			env = append(env, k+"="+v)
 		}
-		for _, step := range b.Run {
+		var steps []string
+		if phase != "run" {
+			steps = append(steps, b.Fetch...)
+		}
+		if phase != "fetch" {
+			steps = append(steps, b.Run...)
+		}
+		for _, step := range steps {
 			fmt.Fprintf(log, "+ %s\n", step)
 			cmd := exec.CommandContext(ctx, "sh", "-c", step)
 			cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = src, env, log, log
 			if err := cmd.Run(); err != nil {
 				return nil, fmt.Errorf("build %d, step %q: %w", i, step, err)
 			}
+		}
+		if phase == "fetch" {
+			continue
 		}
 		built, err := collect(src, b.Artifacts, out)
 		if err != nil {

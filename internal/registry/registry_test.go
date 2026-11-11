@@ -206,7 +206,7 @@ func TestNewRunBuildsItsOwnLink(t *testing.T) {
 func TestLoadProjectSwift(t *testing.T) {
 	load := func(xcode string) error {
 		p := filepath.Join(t.TempDir(), "shadybin.json")
-		data := `{"repo": "github.com/acme/app", "language": "swift", "checksums": "*.sha256",
+		data := `{"repo": "github.com/acme/app", "language": "swift", "seal": true, "checksums": "*.sha256",
 			"builds": [{"runner": "xcode-27", "toolchain": {"xcode": "` + xcode + `"},
 				"run": ["release/build.sh"], "artifacts": ["dist/app.zip"]}]}`
 		if err := os.WriteFile(p, []byte(data), 0o644); err != nil {
