@@ -30,6 +30,10 @@ Darwin)
     sudo dscl . -create "/Users/$builder" UniqueID "$uid"
     sudo dscl . -create "/Users/$builder" PrimaryGroupID 20
     sudo dscl . -create "/Users/$builder" NFSHomeDirectory "/Users/$builder"
+    # An account with no GeneratedUID cannot be matched against an ACL, such as the one on
+    # the runner's home, and is refused by it.
+    sudo dscl . -create "/Users/$builder" GeneratedUID "$(uuidgen)"
+    sudo dscl . -create "/Users/$builder" RealName "shadybin build"
     sudo mkdir -p "/Users/$builder"
     sudo chown "$builder:staff" "/Users/$builder"
   fi
@@ -52,7 +56,9 @@ mkdir -p "$out"
 sudo chown -R "$builder" "$src" "$out"
 if ! sudo -n -u "$builder" test -r "$project"; then
   echo "$builder cannot read $project:" >&2
-  d=$project; while [ "$d" != / ]; do ls -ld "$d" >&2; d=$(dirname "$d"); done
+  d=$project; while [ "$d" != / ]; do ls -lde "$d" >&2; d=$(dirname "$d"); done
+  id "$builder" >&2 || true
+  sudo -n -u "$builder" cat "$project" >/dev/null || true
   exit 1
 fi
 
