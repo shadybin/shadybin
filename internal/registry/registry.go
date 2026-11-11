@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ type Project struct {
 	Repo string `json:"repo"`
 	// Clone is the URL to clone; empty means https://<repo>.git.
 	Clone string `json:"clone,omitempty"`
-	// Language is go, zig or rust: how the code compiled in is found.
+	// Language is go, zig, rust or swift: how the code compiled in is found.
 	Language string `json:"language"`
 	// Builds rebuild the release; each runs on its own runner, as the vendor's release
 	// does, since a binary for macOS may need macOS to build.
@@ -59,7 +60,7 @@ type Build struct {
 	// Runner is the GitHub-hosted runner label, such as ubuntu-24.04 or macos-15.
 	Runner string `json:"runner"`
 	// Toolchain names versions to install, by tool: go (a version, or "go.mod"), zig, rust
-	// (a version, or "rust-toolchain.toml").
+	// (a version, or "rust-toolchain.toml"), xcode (a version the runner image has installed).
 	Toolchain map[string]string `json:"toolchain,omitempty"`
 	// Run are shell commands run in order in the checked-out tag.
 	Run []string `json:"run"`
@@ -95,6 +96,10 @@ type Vendored struct {
 	SHA256 string `json:"sha256"`
 }
 
+// xcodeVersion is an Xcode version as GitHub's macOS images name their installs:
+// /Applications/Xcode_<version>.app.
+var xcodeVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
+
 // CloneURL is where the project's source is cloned from.
 func (p *Project) CloneURL() string {
 	if p.Clone != "" {
@@ -123,9 +128,9 @@ func LoadProject(path string) (*Project, error) {
 		if len(p.Analyze.Packages) == 0 || len(p.Analyze.Targets) == 0 {
 			return nil, fmt.Errorf("%s: a go project names its analyze packages and targets", path)
 		}
-	case "zig", "rust":
+	case "zig", "rust", "swift":
 	default:
-		return nil, fmt.Errorf("%s: language %q: want go, zig or rust", path, p.Language)
+		return nil, fmt.Errorf("%s: language %q: want go, zig, rust or swift", path, p.Language)
 	}
 	if len(p.Builds) == 0 || p.Checksums == "" {
 		return nil, fmt.Errorf("%s: builds and checksums are required", path)
@@ -133,6 +138,9 @@ func LoadProject(path string) (*Project, error) {
 	for i, b := range p.Builds {
 		if b.Runner == "" || len(b.Run) == 0 || len(b.Artifacts) == 0 {
 			return nil, fmt.Errorf("%s: build %d needs a runner, run and artifacts", path, i)
+		}
+		if x, ok := b.Toolchain["xcode"]; ok && !xcodeVersion.MatchString(x) {
+			return nil, fmt.Errorf("%s: build %d: xcode %q is not a version", path, i, x)
 		}
 	}
 	return &p, nil

@@ -28,7 +28,7 @@ its first day, then "v0.2.7 not certified" if nobody certified it. The vendor pa
 Actions minutes and Claude API key. Reviews of third-party code are cached and shared, so
 a popular module is reviewed once for everyone.
 
-Go, Zig and Rust projects can be certified. An updater that uses an SDK installs only
+Go, Zig, Rust and Swift projects can be certified. An updater that uses an SDK installs only
 certified releases, so a certified binary updates only to other certified binaries:
 
 - **Go:** `github.com/shadybin/shadybin/verify`, standard library only.

@@ -97,7 +97,8 @@ jobs:
           repo="github.com/${GITHUB_REPOSITORY,,}"
           curl -fsSL "$REGISTRY/$repo/shadybin.json" -o sb/shadybin.json
           echo "builds=$(jq -c '[.builds | to_entries[] | {index: .key, runner: .value.runner,
-            go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // "")}]' sb/shadybin.json)" >> "$GITHUB_OUTPUT"
+            go: (.value.toolchain.go // ""), zig: (.value.toolchain.zig // ""), rust: (.value.toolchain.rust // ""),
+            xcode: (.value.toolchain.xcode // "")}]' sb/shadybin.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -148,6 +149,19 @@ jobs:
         run: |
           if [ "$RUST" = rust-toolchain.toml ]; then rustup show active-toolchain || rustup toolchain install
           else rustup toolchain install "$RUST" --profile minimal && rustup default "$RUST"; fi
+
+      # Xcode comes with the macOS runner image, several versions side by side; the build uses
+      # the one the release was built with, through DEVELOPER_DIR, which the rebuild passes on.
+      - name: Select Xcode
+        if: matrix.build.xcode != ''
+        env:
+          XCODE: ${{ matrix.build.xcode }}
+        run: |
+          case "$XCODE" in ""|*[!0-9.]*) echo "xcode $XCODE is not a version"; exit 1 ;; esac
+          dir="/Applications/Xcode_$XCODE.app/Contents/Developer"
+          if [ ! -d "$dir" ]; then echo "Xcode $XCODE is not on this runner; it has:"; ls -d /Applications/Xcode_*.app; exit 1; fi
+          echo "DEVELOPER_DIR=$dir" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$dir" xcodebuild -version
 
       - name: Rebuild
         env:
