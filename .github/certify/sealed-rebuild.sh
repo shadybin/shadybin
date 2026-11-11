@@ -51,6 +51,13 @@ sudo chmod go+rx "$sb"
 sudo chmod go+r "$project" "$record"
 mkdir -p "$out"
 sudo chown -R "$builder" "$src" "$out"
+# Builds install toolchains where the vendor's release job does, often RUNNER_TEMP: Zig
+# embeds the paths of what it compiles, so the rebuild must use the same ones. The builder
+# may add to it, but the sticky bit keeps it from moving or replacing the runner's files
+# there, shadybin and the seal record among them.
+if [ -n "${RUNNER_TEMP:-}" ]; then
+  sudo chmod 1777 "$RUNNER_TEMP"
+fi
 if ! (cd / && sudo -n -u "$builder" test -r "$project"); then
   echo "$builder cannot read $project:" >&2
   d=$project; while [ "$d" != / ]; do ls -lde "$d" >&2; d=$(dirname "$d"); done
@@ -62,6 +69,7 @@ fi
 as_builder() {
   local env=(PATH="$PATH")
   [ -n "${DEVELOPER_DIR:-}" ] && env+=(DEVELOPER_DIR="$DEVELOPER_DIR")
+  [ -n "${RUNNER_TEMP:-}" ] && env+=(RUNNER_TEMP="$RUNNER_TEMP")
   (cd / && sudo -n -u "$builder" -H env "${env[@]}" "$@")
 }
 rebuild() {

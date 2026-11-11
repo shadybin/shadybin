@@ -90,5 +90,18 @@ project "$build && sudo -n true"
 if sealed "$work/f" 2>/dev/null; then fail "the sealed build could sudo"; fi
 ok "the sealed build cannot sudo"
 
+# A toolchain installed into RUNNER_TEMP, as builds like marlin's do, at the runner's path.
+if [ -n "${RUNNER_TEMP:-}" ]; then
+  project "$build && echo tool > \"\$RUNNER_TEMP/tool-\$TAG\" && cat \"\$RUNNER_TEMP/tool-\$TAG\" >/dev/null"
+  sealed "$work/g" || fail "the sealed build could not use RUNNER_TEMP"
+  ok "the sealed build installs into RUNNER_TEMP"
+  # And cannot touch the runner's own files there.
+  echo mine > "$RUNNER_TEMP/runner-file-$$"
+  project "$build && rm -f \"\$RUNNER_TEMP/runner-file-$$\""
+  sealed "$work/h" 2>/dev/null || true
+  [ -f "$RUNNER_TEMP/runner-file-$$" ] || fail "the sealed build removed a file of the runner's in RUNNER_TEMP"
+  ok "the sealed build cannot remove the runner's files in RUNNER_TEMP"
+fi
+
 curl -fsS -m 20 -o /dev/null https://github.com || fail "the runner's network did not come back"
 ok "the runner has its network back"
