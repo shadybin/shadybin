@@ -10,7 +10,9 @@
 set -euo pipefail
 sb=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 here=$(cd "$(dirname "$0")" && pwd)
-work=$(mktemp -d)
+# Under the runner's temp directory, where certify works: macOS keeps other users out of
+# a user's own temp directory (/var/folders/.../T) whatever its permissions say.
+work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/sealed-test.XXXXXX")
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_AUTHOR_DATE=2026-10-01T00:00:00Z GIT_COMMITTER_DATE=2026-10-01T00:00:00Z
 
