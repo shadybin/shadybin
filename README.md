@@ -36,6 +36,7 @@ certified releases, so a certified binary updates only to other certified binari
 - **Rust:** `sdk/rust`, the `shadybin-verify` crate.
 - **Python:** `sdk/python`, the `shadybin-verify` package, standard library only.
 - **JavaScript and TypeScript:** `sdk/js`, `@shadybin/verify`, no dependencies (WebCrypto).
+- **Swift:** `sdk/swift`, the `ShadybinVerify` package, no dependencies (CryptoKit, so Apple platforms).
 
 ```go
 c := verify.Checker{} // trusts verify.DefaultKeys, shadybin's pinned keys
@@ -69,7 +70,7 @@ See [spec/SPEC.md](spec/SPEC.md) for the formats and the flow.
 
 ```text
 verify/                 the Go SDK (its own module, standard library only)
-sdk/                    the Zig, Rust, Python and JavaScript/TypeScript SDKs
+sdk/                    the Zig, Rust, Python, JavaScript/TypeScript and Swift SDKs
 spec/                   SPEC.md, and vectors.json, the conformance tests every SDK runs
 cmd/shadybin/           the CLI: keygen, rebuild, compare, manifest, capabilities, review,
                         statement, sign, verify

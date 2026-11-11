@@ -1,4 +1,4 @@
-.PHONY: build check dist format test vectors sdk-test
+.PHONY: build check dist format test vectors sdk-test sdk-swift
 
 build:
 	go build -o bin/shadybin ./cmd/shadybin
@@ -33,16 +33,23 @@ vectors:
 	cp spec/vectors.json sdk/rust/tests/vectors.json
 	cp spec/vectors.json sdk/python/tests/vectors.json
 	cp spec/vectors.json sdk/js/test/vectors.json
+	cp spec/vectors.json sdk/swift/Tests/ShadybinVerifyTests/vectors.json
 
 sdk-test:
 	cd sdk/zig && zig build test
 	cd sdk/rust && cargo test --quiet
 	cd sdk/python && PYTHONPATH=src python3 -m unittest discover -s tests
 	cd sdk/js && npm ci --silent --no-audit --no-fund && npx tsc -p . --noEmit && npm test --silent
+	@if [ "$$(uname)" = Darwin ]; then $(MAKE) sdk-swift; else echo "sdk/swift: CryptoKit is Apple's; CI tests it on macOS"; fi
+
+# The Swift SDK uses CryptoKit, so it builds and tests on Apple platforms only. Its manifest
+# is the repository's Package.swift, since SwiftPM fetches packages from a root only.
+sdk-swift:
+	swift test --quiet
 
 check:
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; echo "run make format"; exit 1; }
-	@for v in sdk/zig/src/testdata/vectors.json sdk/rust/tests/vectors.json sdk/python/tests/vectors.json sdk/js/test/vectors.json; do \
+	@for v in sdk/zig/src/testdata/vectors.json sdk/rust/tests/vectors.json sdk/python/tests/vectors.json sdk/js/test/vectors.json sdk/swift/Tests/ShadybinVerifyTests/vectors.json; do \
 		cmp -s spec/vectors.json $$v || { echo "$$v differs from spec/vectors.json: run make vectors"; exit 1; }; done
 	go vet ./...
 	cd verify && go vet ./...
