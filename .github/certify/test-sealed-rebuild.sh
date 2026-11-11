@@ -86,6 +86,10 @@ project "$build && curl -fsS -m 10 -o /dev/null https://github.com"
 if sealed "$work/e" 2>/dev/null; then fail "the sealed build reached the network"; fi
 ok "the sealed build cannot reach the network"
 
+project "$build && python3 -c \"import socket; socket.getaddrinfo('github.com', 443)\""
+if sealed "$work/e2" 2>/dev/null; then fail "the sealed build could look names up"; fi
+ok "the sealed build cannot look names up"
+
 project "$build && sudo -n true"
 if sealed "$work/f" 2>/dev/null; then fail "the sealed build could sudo"; fi
 ok "the sealed build cannot sudo"

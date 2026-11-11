@@ -180,9 +180,9 @@ rebuild makes that promise checkable. Before any of the vendor's code runs, `sha
 works out the scope, the files of the repository the review covers, by the same analysis
 the review uses; empties every other file the repository tracks; and removes `.git`, whose
 objects hold them too. The build then runs as a user without `sudo`: its `fetch` commands
-with the network, then, with the firewall dropping that user's packets and all DNS from the
-machine (on macOS a lookup goes through a daemon no per-user rule sees), its `run`
-commands. A file the review left out is empty by then and cannot be fetched again, so a
+with the network, then, with the firewall dropping that user's packets, and on macOS that
+user denied the socket of `mDNSResponder` (through which lookups go, unseen by any per-user
+firewall rule), its `run` commands. A file the review left out is empty by then and cannot be fetched again, so a
 build that needed one fails or makes something other than the published files, and the
 release does not certify. `seal` writes a record of the release, the commit, the scope's
 digest and how many files it emptied; the certify job recomputes the scope from its own
