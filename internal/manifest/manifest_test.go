@@ -99,3 +99,16 @@ func TestMarshalIsStable(t *testing.T) {
 		}
 	}
 }
+
+// TestReportWithoutCapabilities: a language with no capability analysis says so, rather
+// than an empty table under a sentence about a tool that did not run.
+func TestReportWithoutCapabilities(t *testing.T) {
+	m := &Manifest{Tool: "none", Modules: map[string]string{"github.com/apple/swift-log": "1.17.0"},
+		Packages: []string{"github.com/acme/app", "github.com/acme/app/Sources/App"}, Capabilities: map[string][]string{}}
+	var b strings.Builder
+	m.Markdown(&b, nil, "")
+	if s := b.String(); !strings.Contains(s, "No capability analysis for this language") ||
+		!strings.Contains(s, "2 packages, from 1 third-party modules") || strings.Contains(s, "found by") {
+		t.Fatalf("report:\n%s", s)
+	}
+}

@@ -59,20 +59,27 @@ func Diff(prev, m *Manifest) *Change {
 func (m *Manifest) Markdown(w io.Writer, prev *Manifest, prevTag string) {
 	fmt.Fprintln(w, "## Capabilities")
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "What each package compiled into the binary uses directly from the standard library, for %s, found by `%s`. Reflection, runtime and unanalyzed calls are left out: nearly every package has them.\n\n",
-		strings.Join(m.GOOS, ", "), m.Tool)
-	byCap := map[string][]string{}
-	for p := range m.Capabilities {
-		for _, c := range m.Notable(p) {
-			byCap[c] = append(byCap[c], p)
+	if m.Tool == "none" {
+		// Only Go has a capability analysis; for other languages the manifest lists what is
+		// compiled in, and the review is all there is to say what it can do.
+		fmt.Fprintf(w, "No capability analysis for this language: only Go has one. Compiled in: %d packages, from %d third-party modules.\n\n",
+			len(m.Packages), len(m.Modules))
+	} else {
+		fmt.Fprintf(w, "What each package compiled into the binary uses directly from the standard library, for %s, found by `%s`. Reflection, runtime and unanalyzed calls are left out: nearly every package has them.\n\n",
+			strings.Join(m.GOOS, ", "), m.Tool)
+		byCap := map[string][]string{}
+		for p := range m.Capabilities {
+			for _, c := range m.Notable(p) {
+				byCap[c] = append(byCap[c], p)
+			}
 		}
+		fmt.Fprintln(w, "| Capability | Packages |")
+		fmt.Fprintln(w, "|---|---|")
+		for _, c := range slices.Sorted(maps.Keys(byCap)) {
+			fmt.Fprintf(w, "| %s | <details><summary>%d</summary>%s</details> |\n", c, len(byCap[c]), m.list(byCap[c]))
+		}
+		fmt.Fprintf(w, "\n%d packages outside the standard library are compiled in.\n\n", len(m.Packages))
 	}
-	fmt.Fprintln(w, "| Capability | Packages |")
-	fmt.Fprintln(w, "|---|---|")
-	for _, c := range slices.Sorted(maps.Keys(byCap)) {
-		fmt.Fprintf(w, "| %s | <details><summary>%d</summary>%s</details> |\n", c, len(byCap[c]), m.list(byCap[c]))
-	}
-	fmt.Fprintf(w, "\n%d packages outside the standard library are compiled in.\n\n", len(m.Packages))
 
 	if prev == nil {
 		fmt.Fprintln(w, "### Changes")
