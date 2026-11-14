@@ -78,10 +78,28 @@ func TestSealCatchesAFileOutsideTheReview(t *testing.T) {
 	// Sealed, it has nothing to ship but what the review saw, so its output differs from
 	// the release built with the hidden file, and would not certify.
 	sealed := clone(t, repo)
+	// What an earlier step left in the checkout, as setup-zig restores a cache: untracked,
+	// and ignored too.
+	if err := os.WriteFile(filepath.Join(sealed, ".gitignore"), []byte(".zig-cache/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{".zig-cache/o/stale/base.h", "stray.swift"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(sealed, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sealed, f), []byte("not in the tag\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	record := filepath.Join(t.TempDir(), "seal")
 	mustRun(t, "seal", "-project", project, "-tag", "v1.0.0", "-src", sealed, "-o", record)
 	if _, err := os.Stat(filepath.Join(sealed, ".git")); err == nil {
 		t.Fatal(".git survived the seal")
+	}
+	for _, f := range []string{".zig-cache", "stray.swift", ".gitignore"} {
+		if _, err := os.Stat(filepath.Join(sealed, f)); err == nil {
+			t.Fatalf("%s, which the tag does not track, survived the seal", f)
+		}
 	}
 	if fi, err := os.Stat(filepath.Join(sealed, "docs/hidden.swift")); err != nil || fi.Size() != 0 {
 		t.Fatalf("the excluded file was not emptied: %v %v", fi, err)

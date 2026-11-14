@@ -157,9 +157,14 @@ func scopeDigest(files []string) string {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
-// seal empties every tracked file of src outside the scope, removes .git, and returns the
-// record. src must be a clean checkout of tag.
+// seal empties every tracked file of src outside the scope, removes every untracked one and
+// .git, and returns the record. src must be a checkout of tag with no tracked file changed.
 func seal(ctx context.Context, p *registry.Project, tag, src string, log io.Writer) (sealRecord, error) {
+	// Untracked files go before the check, which then sees only changes to tracked ones, and
+	// again after the analysis, which may leave some of its own.
+	if err := cleanUntracked(ctx, src, log); err != nil {
+		return sealRecord{}, err
+	}
 	commit, epoch, err := checkCheckout(ctx, src, tag, log)
 	if err != nil {
 		return sealRecord{}, err
@@ -183,10 +188,27 @@ func seal(ctx context.Context, p *registry.Project, tag, src string, log io.Writ
 		fmt.Fprintf(log, "seal: emptied %s\n", f)
 		r.Emptied++
 	}
+	if err := cleanUntracked(ctx, src, log); err != nil {
+		return sealRecord{}, err
+	}
 	if err := os.RemoveAll(filepath.Join(src, ".git")); err != nil {
 		return sealRecord{}, err
 	}
 	return r, nil
+}
+
+// cleanUntracked removes whatever git does not track from src: it is no part of the tag, and
+// the review never saw it. A cache an earlier step restored into the checkout (setup-zig
+// restores .zig-cache) is such a file. Ignored files and nested repositories go too.
+func cleanUntracked(ctx context.Context, src string, log io.Writer) error {
+	cleaned, err := git(ctx, src, log, "clean", "-ffdx")
+	if err != nil {
+		return err
+	}
+	if cleaned != "" {
+		fmt.Fprintf(log, "seal: removed what the tag does not track:\n%s\n", cleaned)
+	}
+	return nil
 }
 
 // empty leaves an empty regular file where a file or link was. A submodule's directory is

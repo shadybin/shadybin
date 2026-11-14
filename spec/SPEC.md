@@ -178,8 +178,9 @@ Which files a build compiles is, for some languages, known only by running the b
 SwiftPM's manifest is a program, `build.zig` too, and `exclude` is a promise. A sealed
 rebuild makes that promise checkable. Before any of the vendor's code runs, `shadybin seal`
 works out the scope, the files of the repository the review covers, by the same analysis
-the review uses; empties every other file the repository tracks; and removes `.git`, whose
-objects hold them too. The build then runs as a user without `sudo`: its `fetch` commands
+the review uses; empties every other file the repository tracks; removes every file it does not
+track (an earlier step's restored cache, or the analysis's own leftovers, which the review
+never saw); and removes `.git`, whose objects hold the emptied files too. The build then runs as a user without `sudo`: its `fetch` commands
 with the network, then, with the firewall dropping that user's packets, and on macOS that
 user denied the socket of `mDNSResponder` (through which lookups go, unseen by any per-user
 firewall rule), its `run` commands. A file the review left out is empty by then and cannot be fetched again, so a
