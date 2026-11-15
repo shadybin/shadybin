@@ -172,6 +172,14 @@ installs it. Swift writes absolute paths into the linker's debug map, so link wi
 packages `Package.resolved` pins and the review saw. The rebuild checks out the tag at the workspace root, as the release job
 does.
 
+Some builds reproduce only on the runner image they were built on. Zig's build system names
+a copied directory (`installHeadersDirectory`, `addCopyDirectory`) after a hash of its files
+taken in the order the filesystem lists them, and C that includes a header from the copy
+embeds that name through `__FILE__`. ext4 lists a directory in an order seeded when the
+filesystem was made, so each new Linux runner image gives the copy, and the binary, another
+name; macOS lists the same everywhere. Such a release certifies in its own release
+workflow, while its image is current, and not again after the image is replaced.
+
 ### Sealed rebuilds
 
 Which files a build compiles is, for some languages, known only by running the build:
@@ -221,6 +229,10 @@ Each language's tools say which code is compiled in:
   give a shipped target any path. A
   manifest that declares packages without a `Package.resolved` is refused, and so are
   packages from a registry or a local path.
+
+Each download, a package, a repository, an archive, is tried three times over half a
+minute, so a dropped connection or a failed lookup does not decide a review or a seal; an
+answer that would only repeat, a wrong hash or a missing file, fails at once.
 
 None of this runs the vendor's code. The job that reviews and attests holds the vendor's
 API key and the identity that attests, so a program of the vendor's running there could

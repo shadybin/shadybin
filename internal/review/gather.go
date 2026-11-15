@@ -103,7 +103,7 @@ func Gather(ctx context.Context, in Inputs, log io.Writer) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	mods, upstream, err := carveVendored(ctx, in.Src, in.Vendored, mods)
+	mods, upstream, err := carveVendored(ctx, in.Src, in.Vendored, mods, log)
 	if err != nil {
 		return nil, err
 	}

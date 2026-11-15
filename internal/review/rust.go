@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -212,12 +211,12 @@ func gitSource(src string) (repo, commit string) {
 }
 
 // Fetch downloads a crate at another version from crates.io.
-func (Rust) Fetch(ctx context.Context, _ string, m *Module, version string, _ io.Writer) (string, error) {
+func (Rust) Fetch(ctx context.Context, _ string, m *Module, version string, log io.Writer) (string, error) {
 	name, ok := strings.CutPrefix(m.Path, "crates.io/")
 	if !ok {
 		return "", fmt.Errorf("%s: only crates.io crates can be fetched at another version", m.Path)
 	}
-	a, err := fetchCrate(ctx, name, version)
+	a, err := fetchCrate(ctx, name, version, log)
 	if err != nil {
 		return "", err
 	}
@@ -228,23 +227,14 @@ func (Rust) Fetch(ctx context.Context, _ string, m *Module, version string, _ io
 	return writeArchive(a, dir)
 }
 
-func fetchCrate(ctx context.Context, name, version string) (archive, error) {
+func fetchCrate(ctx context.Context, name, version string, log io.Writer) (archive, error) {
 	u := "https://static.crates.io/crates/" + url.PathEscape(name) + "/" + url.PathEscape(name) + "-" + url.PathEscape(version) + ".crate"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	data, err := download(ctx, log, u, maxArchive)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", u, resp.Status)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxArchive))
-	if err != nil {
-		return nil, err
+	if len(data) > maxArchive {
+		return nil, fmt.Errorf("%s: too large", u)
 	}
 	return readArchive(u, data)
 }
@@ -290,11 +280,16 @@ func (Rust) CheckProvenance(ctx context.Context, m *Module, log io.Writer) error
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	for _, args := range [][]string{{"init", "-q"}, {"fetch", "-q", "--depth", "1", m.repository, info.Git.SHA1}} {
-		if _, err := gitOut(ctx, tmp, log, args...); err != nil {
-			m.Provenance = "not checkable: " + m.repository + " at " + info.Git.SHA1 + " could not be fetched"
-			return nil
-		}
+	_, err = gitOut(ctx, tmp, log, "init", "-q")
+	if err == nil {
+		err = retry(ctx, log, "fetching "+m.repository, func() error {
+			_, err := gitOut(ctx, tmp, log, "fetch", "-q", "--depth", "1", m.repository, info.Git.SHA1)
+			return err
+		})
+	}
+	if err != nil {
+		m.Provenance = "not checkable: " + m.repository + " at " + info.Git.SHA1 + " could not be fetched"
+		return nil
 	}
 	where := strings.TrimSuffix(m.repository, ".git") + "@" + info.Git.SHA1
 	var foreign []string

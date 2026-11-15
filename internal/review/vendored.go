@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -32,10 +31,10 @@ const maxArchive = 256 << 20
 // byte for byte upstream's become a third-party module; anything else in the copy, edited
 // or added, stays the vendor's and is reviewed with the project. It returns the modules,
 // and pathspecs that keep the upstream files out of the project's diff.
-func carveVendored(ctx context.Context, src string, decl []Vendored, mods []*Module) ([]*Module, []string, error) {
+func carveVendored(ctx context.Context, src string, decl []Vendored, mods []*Module, log io.Writer) ([]*Module, []string, error) {
 	var excludes []string
 	for _, v := range decl {
-		upstream, err := fetchArchive(ctx, v.URL, v.SHA256)
+		upstream, err := fetchArchive(ctx, v.URL, v.SHA256, log)
 		if err != nil {
 			return nil, nil, fmt.Errorf("vendored %s: %w", v.Path, err)
 		}
@@ -107,20 +106,8 @@ func (a archive) has(rel string, data []byte) bool {
 }
 
 // fetchArchive downloads an archive, checks its digest, and reads its files.
-func fetchArchive(ctx context.Context, url, want string) (archive, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", url, resp.Status)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxArchive+1))
+func fetchArchive(ctx context.Context, url, want string, log io.Writer) (archive, error) {
+	data, err := download(ctx, log, url, maxArchive)
 	if err != nil {
 		return nil, err
 	}
