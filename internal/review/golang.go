@@ -99,9 +99,13 @@ func (g Go) Modules(ctx context.Context, src string, log io.Writer) ([]*Module, 
 // Fetch downloads the module at another version into the module cache.
 func (Go) Fetch(ctx context.Context, src string, m *Module, version string, log io.Writer) (string, error) {
 	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, "go", "mod", "download", "-json", m.Path+"@"+version)
-	cmd.Dir, cmd.Stdout, cmd.Stderr = src, &out, log
-	if err := cmd.Run(); err != nil {
+	err := retry(ctx, log, "go mod download "+m.Path+"@"+version, func() error {
+		out.Reset()
+		cmd := exec.CommandContext(ctx, "go", "mod", "download", "-json", m.Path+"@"+version)
+		cmd.Dir, cmd.Stdout, cmd.Stderr = src, &out, log
+		return cmd.Run()
+	})
+	if err != nil {
 		return "", fmt.Errorf("go mod download %s@%s: %w", m.Path, version, err)
 	}
 	var d struct{ Dir string }

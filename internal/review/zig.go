@@ -321,19 +321,21 @@ func (f *zigFetcher) fetch(ctx context.Context, url, hash string, log io.Writer)
 	if err := os.WriteFile(filepath.Join(f.work, "build.zig.zon"), []byte(zon), 0o644); err != nil {
 		return err
 	}
-	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, "zig", "build", "--fetch")
-	cmd.Dir, cmd.Stdout, cmd.Stderr = f.work, log, io.MultiWriter(log, &stderr)
 	env, _ := cleanenv.Clean(os.Environ())
-	cmd.Env = append(env, "ZIG_GLOBAL_CACHE_DIR="+filepath.Join(f.work, "cache"))
-	if err := cmd.Run(); err != nil {
-		if _, got, ok := strings.Cut(stderr.String(), "but the fetched package has "); ok {
-			got, _, _ = strings.Cut(got, "\n")
-			return fmt.Errorf("%s fetched as %s, but build.zig.zon pins %s", url, strings.TrimSpace(got), hash)
+	env = append(env, "ZIG_GLOBAL_CACHE_DIR="+filepath.Join(f.work, "cache"))
+	return retry(ctx, log, "fetching "+url, func() error {
+		var stderr bytes.Buffer
+		cmd := exec.CommandContext(ctx, "zig", "build", "--fetch")
+		cmd.Dir, cmd.Stdout, cmd.Stderr, cmd.Env = f.work, log, io.MultiWriter(log, &stderr), env
+		if err := cmd.Run(); err != nil {
+			if _, got, ok := strings.Cut(stderr.String(), "but the fetched package has "); ok {
+				got, _, _ = strings.Cut(got, "\n")
+				return final(fmt.Errorf("%s fetched as %s, but build.zig.zon pins %s", url, strings.TrimSpace(got), hash))
+			}
+			return fmt.Errorf("zig build --fetch %s: %w", url, err)
 		}
-		return fmt.Errorf("zig build --fetch %s: %w", url, err)
-	}
-	return nil
+		return nil
+	})
 }
 
 // validZigHash keeps a hash from naming a path outside the package directory.

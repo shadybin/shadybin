@@ -170,10 +170,16 @@ func fetchSwiftPackage(ctx context.Context, location, revision string, log io.Wr
 		return strings.TrimSpace(out.String()), nil
 	}
 	// origin is the package's repository, which relative submodule URLs are resolved against.
-	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", location}, {"fetch", "-q", "--depth", "1", "origin", revision}} {
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", location}} {
 		if _, err := run(args...); err != nil {
 			return "", err
 		}
+	}
+	if err := retry(ctx, log, "fetching "+location, func() error {
+		_, err := run("fetch", "-q", "--depth", "1", "origin", revision)
+		return err
+	}); err != nil {
+		return "", err
 	}
 	if got, err := run("rev-parse", "FETCH_HEAD"); err != nil || got != revision {
 		return "", fmt.Errorf("%s fetched %s, but Package.resolved pins %s", location, got, revision)
@@ -182,7 +188,10 @@ func fetchSwiftPackage(ctx context.Context, location, revision string, log io.Wr
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".gitmodules")); err == nil {
-		if _, err := run("submodule", "update", "-q", "--init", "--recursive", "--depth", "1"); err != nil {
+		if err := retry(ctx, log, "fetching the submodules of "+location, func() error {
+			_, err := run("submodule", "update", "-q", "--init", "--recursive", "--depth", "1")
+			return err
+		}); err != nil {
 			return "", err
 		}
 	}
